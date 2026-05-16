@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Playwright test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swo
+*.swp

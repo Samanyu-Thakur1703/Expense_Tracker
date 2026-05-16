@@ -1,0 +1,520 @@
+﻿<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="FinTrack AI - Premium Personal Finance Dashboard for Indian users with expense tracking, investment management, and AI insights.">
+    <title>FinTrack AI - Smart Personal Finance Dashboard</title>
+    
+    <!-- Google Fonts: Playfair Display (Display) + Inter (Body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="light-mode">
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="auth-wrapper">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <div class="logo">
+                        <div class="logo-icon"><i data-lucide="zap"></i></div>
+                        <span>FinTrack AI</span>
+                    </div>
+                    <h2 id="auth-title">Welcome Back</h2>
+                    <p id="auth-subtitle">Log in to manage your finances</p>
+                </div>
+                
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="login-email">Email Address</label>
+                        <input type="email" id="login-email" required placeholder="name@example.com">
+                        <span class="validation-error" id="login-email-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" required placeholder="Enter your password" minlength="4">
+                        <span class="validation-error" id="login-password-error"></span>
+                    </div>
+                    <button type="submit" class="btn btn-primary full-width">Sign In</button>
+                    <p class="auth-switch">Don't have an account? <a href="#" id="toggle-signup">Create Account</a></p>
+                </form>
+
+                <!-- Signup Form -->
+                <form id="signup-form" class="auth-form hidden">
+                    <div class="form-group">
+                        <label for="signup-name">Full Name</label>
+                        <input type="text" id="signup-name" required placeholder="Enter your name">
+                        <span class="validation-error" id="signup-name-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="signup-email">Email Address</label>
+                        <input type="email" id="signup-email" required placeholder="name@example.com">
+                        <span class="validation-error" id="signup-email-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="signup-password">Password</label>
+                        <input type="password" id="signup-password" required placeholder="At least 8 characters" minlength="8">
+                        <span class="validation-error" id="signup-password-error"></span>
+                    </div>
+                    <button type="submit" class="btn btn-primary full-width">Sign Up</button>
+                    <p class="auth-switch">Already have an account? <a href="#" id="toggle-login">Log In</a></p>
+                </form>
+            </div>
+            
+            <div class="auth-info">
+                <h1>Financial Intelligence for Everyone.</h1>
+                <p>Track expenses, monitor stocks, and get AI-driven insights with India's most modern fintech platform.</p>
+                <div class="auth-stats">
+                    <div class="auth-stat">
+                        <h3>10k+</h3>
+                        <p>Active Users</p>
+                    </div>
+                    <div class="auth-stat">
+                        <h3>₹150Cr+</h3>
+                        <p>Transactions Tracked</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Layout (Hidden by default) -->
+    <div id="app-shell" class="app-container hidden">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon"><i data-lucide="zap"></i></div>
+                    <span class="logo-text">FinTrack AI</span>
+                </div>
+                <button id="sidebar-collapse-btn" class="icon-btn sidebar-collapse-btn" title="Collapse Sidebar">
+                    <i data-lucide="panel-left-close"></i>
+                </button>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-item active" data-view="dashboard">
+                    <i data-lucide="layout-dashboard"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#expenses" class="nav-item" data-view="expenses">
+                    <i data-lucide="receipt"></i>
+                    <span>Expenses</span>
+                </a>
+                <a href="#investments" class="nav-item" data-view="investments">
+                    <i data-lucide="trending-up"></i>
+                    <span>Investments</span>
+                </a>
+                <a href="#insights" class="nav-item" data-view="insights">
+                    <i data-lucide="lightbulb"></i>
+                    <span>Insights</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Sam" alt="User Profile" class="avatar" id="avatar-img">
+                    <div class="user-info">
+                        <span class="user-name" id="profile-name">Samanyu</span>
+                        <span class="user-role" id="profile-email">Premium User</span>
+                    </div>
+                </div>
+                <button id="logout-btn" class="icon-btn-small logout" title="Logout">
+                    <i data-lucide="log-out"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Wrapper -->
+        <main class="main-content">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="search-container">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="global-search" placeholder="Search transactions, stocks, or insights..." autocomplete="off" aria-label="Search transactions, stocks, or insights">
+                    <div id="global-search-results" class="search-results-dropdown hidden"></div>
+                </div>
+                
+                <div class="topbar-actions">
+                    <button id="theme-toggle" class="icon-btn" title="Toggle Dark/Light Mode">
+                        <i data-lucide="sun" class="sun-icon"></i>
+                        <i data-lucide="moon" class="moon-icon"></i>
+                    </button>
+                    <button id="notifications-btn" class="icon-btn">
+                        <i data-lucide="bell"></i>
+                        <span class="notification-badge"></span>
+                    </button>
+                    <button id="add-expense-quick" class="btn btn-primary">
+                        <i data-lucide="plus"></i>
+                        <span>Add Expense</span>
+                    </button>
+                </div>
+            </header>
+
+    <div id="view-container">
+                <!-- Dashboard View -->
+                <section id="dashboard" class="view active">
+                    <div class="view-header">
+                        <h1>Dashboard Overview</h1>
+                        <p class="text-muted">Welcome back, here's what your AI financial team has analyzed today.</p>
+                    </div>
+
+                    <!-- Market Ticker -->
+                    <div class="market-ticker" id="market-ticker">
+                        <div class="ticker-item" id="nifty-50">
+                            <span class="ticker-label">NIFTY 50</span>
+                            <span class="ticker-price">22,096.75</span>
+                            <span class="ticker-change positive">+0.45%</span>
+                        </div>
+                        <div class="ticker-item" id="sensex">
+                            <span class="ticker-label">SENSEX</span>
+                            <span class="ticker-price">72,831.94</span>
+                            <span class="ticker-change positive">+0.26%</span>
+                        </div>
+                    </div>
+
+                    <!-- Summary Cards -->
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <div class="card-icon balance"><i data-lucide="wallet"></i></div>
+                            <div class="card-data">
+                                <span class="card-label">Total Balance</span>
+                                <h2 id="display-balance">₹0.00</h2>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="card-icon budget"><i data-lucide="target"></i></div>
+                            <div class="card-data">
+                                <span class="card-label">Monthly Budget</span>
+                                <h2 id="display-budget">₹0.00</h2>
+                                <span class="card-subtext" id="budget-progress-text">0% Used</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="budget-progress-bar"></div>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="card-icon expenses"><i data-lucide="shopping-bag"></i></div>
+                            <div class="card-data">
+                                <span class="card-label">Total Expenses</span>
+                                <h2 id="display-expenses">₹0.00</h2>
+                                <span class="card-subtext">This Month</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row -->
+                    <div class="dashboard-row">
+                        <div class="chart-container main-chart">
+                            <div class="chart-header">
+                                <h3>Spending Trend</h3>
+                            </div>
+                            <canvas id="spendingTrendChart"></canvas>
+                        </div>
+                        
+                        <div class="insights-mini-panel">
+                            <h3>AI Financial Insights</h3>
+                            <div id="insights-list-mini" class="insights-container">
+                                <!-- Dynamic Content -->
+                            </div>
+                            <button class="btn-text" id="view-all-insights-btn">View All Insights <i data-lucide="chevron-right"></i></button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Expenses View -->
+                <section id="expenses-view" class="view">
+                    <div class="view-header row">
+                        <div>
+                            <h1>Expense Management</h1>
+                            <p class="text-muted">Track and organize every rupee you spend.</p>
+                        </div>
+                        <div class="view-actions">
+                            <button id="export-csv" class="btn btn-secondary"><i data-lucide="download"></i> Export CSV</button>
+                            <button id="add-expense-main" class="btn btn-primary"><i data-lucide="plus"></i> Add Expense</button>
+                        </div>
+                    </div>
+
+                    <div class="filter-bar">
+                        <div class="filter-group">
+                            <label for="filter-category">Category</label>
+                            <select id="filter-category">
+                                <option value="all">All Categories</option>
+                                <option value="Food">Food</option>
+                                <option value="Travel">Travel</option>
+                                <option value="Bills">Bills</option>
+                                <option value="Shopping">Shopping</option>
+                                <option value="Health">Health</option>
+                                <option value="Investment">Investment</option>
+                                <option value="Entertainment">Entertainment</option>
+                                <option value="Others">Others</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="expense-search">Search</label>
+                            <input type="text" id="expense-search" placeholder="Search description...">
+                        </div>
+                    </div>
+
+                    <div class="table-container">
+                        <table id="expenses-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Category</th>
+                                    <th>Amount</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenses-tbody"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Investments View -->
+                <section id="investments-view" class="view">
+                    <div class="view-header row">
+                        <div>
+                            <h1>Wealth Management</h1>
+                            <p class="text-muted">Monitor your portfolio and upcoming IPO opportunities.</p>
+                        </div>
+                        <div class="view-actions">
+                            <button id="api-config-btn" class="btn btn-secondary">
+                                <i data-lucide="settings-2"></i> API Configuration
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Portfolio Summary -->
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <span class="card-label">Current Value</span>
+                            <h2 id="portfolio-value">₹1,12,45,000</h2>
+                            <span class="positive">+₹12,400 (1.2%) Today</span>
+                        </div>
+                        <div class="summary-card">
+                            <span class="card-label">Total Invested</span>
+                            <h2 id="invested-amount">₹1,10,00,000</h2>
+                            <span class="card-subtext">Across 8 Assets</span>
+                        </div>
+                        <div class="summary-card">
+                            <span class="card-label">Next IPO Date</span>
+                            <h2 id="next-ipo-date">24 Oct 2026</h2>
+                            <span class="card-subtext" id="ipo-count-text">3 Open IPOs</span>
+                        </div>
+                    </div>
+
+                    <div class="investment-layout">
+                        <!-- AI Stock Manager Panel -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i data-lucide="brain"></i> AI Stock Manager</h3>
+                                <button class="btn-text" id="ai-stock-analyze-btn">Analyze Portfolio <i data-lucide="chevron-right"></i></button>
+                            </div>
+                            <div class="card-body">
+                                <div id="stock-loading" class="loading-shimmer hidden"></div>
+                                <div id="stock-watchlist" class="stock-list"></div>
+                                <!-- AI Stock Recommendations -->
+                                <div id="ai-stock-recommendations" class="ai-recommendations">
+                                    <h4>AI Recommendations <button class="btn btn-text" id="refresh-recs-btn" style="float:right;">Refresh <i data-lucide="refresh-cw"></i></button></h4>
+                                    <div id="ai-rec-list"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Economist Team Panel -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i data-lucide="users"></i> Economist Team</h3>
+                                <span class="ai-status">5 Members Online</span>
+                            </div>
+                            <div class="card-body">
+                                <div id="economist-team" class="economist-list">
+                                    <!-- Dynamically populated -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- IPO Tracker Panel -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Upcoming & Active IPOs</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-container">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Company</th>
+                                                <th>Price Band</th>
+                                                <th>Status</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ipo-tbody">
+                                            <!-- Dynamic Content -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Insights View -->
+                <section id="insights-view" class="view">
+                    <div class="view-header">
+                        <h1>Financial Insights</h1>
+                        <p class="text-muted">Deep dive into your spending habits.</p>
+                    </div>
+                    <div class="insights-grid" id="full-insights-list"></div>
+                </section>
+            </div>
+        </main>
+        
+        <!-- AI Chatbot (inside app-shell so it hides with login screen) -->
+        <button id="open-chatbot" class="chatbot-fab hidden" title="AI Assistant">
+            <i data-lucide="message-circle"></i>
+        </button>
+        
+        <div id="ai-chatbot" class="chatbot hidden">
+            <div class="chatbot-header">
+                <i data-lucide="bot"></i>
+                <h4>AI Financial Assistant</h4>
+                <button id="minimize-chatbot" class="close-modal" title="Minimize"><i data-lucide="minus"></i></button>
+                <button id="close-chatbot" class="close-modal" title="Close"><i data-lucide="x"></i></button>
+            </div>
+            <div class="chatbot-messages" id="chat-messages">
+                <div class="message ai-message">
+                    <p>Hello! I'm your AI Financial Assistant. I can help with:</p>
+                    <ul>
+                        <li>Checking your balance and budget</li>
+                        <li>Analyzing spending patterns</li>
+                        <li>Investment portfolio insights</li>
+                        <li>Market trends and IPO updates</li>
+                    </ul>
+                    <p>Try asking: "What's my balance?" or "How much did I spend?"</p>
+                </div>
+            </div>
+            <div class="chatbot-input-container">
+                <input type="text" id="chat-input" placeholder="Ask me anything..." aria-label="Ask AI assistant">
+                <button id="send-chat"><i data-lucide="send"></i></button>
+            </div>
+        </div>
+        
+    </div>
+    
+    <!-- Modals -->
+    <div id="expense-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Add New Expense</h2>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <form id="expense-form">
+                <input type="hidden" id="edit-expense-id">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="exp-amount">Amount (₹)*</label>
+                        <input type="number" id="exp-amount" required min="0.01" step="0.01">
+                        <span class="validation-error" id="exp-amount-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="exp-category">Category*</label>
+                        <select id="exp-category" required>
+                            <option value="Food">Food</option>
+                            <option value="Travel">Travel</option>
+                            <option value="Bills">Bills</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Health">Health</option>
+                            <option value="Investment">Investment</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="exp-desc">Description*</label>
+                    <input type="text" id="exp-desc" required>
+                    <span class="validation-error" id="exp-desc-error"></span>
+                </div>
+                <div class="form-group">
+                    <label for="exp-date">Date*</label>
+                    <input type="date" id="exp-date" required max="">
+                    <span class="validation-error" id="exp-date-error"></span>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save Expense</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Setup Modal -->
+    <div id="setup-modal" class="modal">
+        <div class="modal-content small">
+            <h2>Financial Setup</h2>
+            <p>Set your monthly goals to start tracking.</p>
+            <form id="setup-form">
+                <div class="form-group">
+                    <label for="set-balance">Initial Balance (₹)</label>
+                    <input type="number" id="set-balance" required min="0" step="0.01">
+                    <span class="validation-error" id="set-balance-error"></span>
+                </div>
+                <div class="form-group">
+                    <label for="set-budget">Monthly Budget (₹)</label>
+                    <input type="number" id="set-budget" required min="1" step="0.01">
+                    <span class="validation-error" id="set-budget-error"></span>
+                </div>
+                <button type="submit" class="btn btn-primary full-width">Start</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- API Settings Modal -->
+    <div id="api-config-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>API Configuration</h2>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <p class="text-secondary" style="margin-bottom: 1.5rem;">Connect to real-time market data providers. Your keys are stored locally and never leave your device.</p>
+            <form id="api-config-form">
+                <div class="form-group">
+                    <label for="api-provider">Data Provider</label>
+                    <select id="api-provider">
+                        <option value="alpha_vantage">Alpha Vantage (Free Tier)</option>
+                        <option value="iex_cloud">IEX Cloud</option>
+                        <option value="polygon">Polygon.io</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="api-key">API Key</label>
+                    <input type="password" id="api-key" placeholder="Enter your secret API key">
+                    <span class="validation-error" id="api-key-error"></span>
+                </div>
+                <div class="api-status-notice">
+                    <i data-lucide="shield-check"></i>
+                    <span>Supported APIs: Alpha Vantage, IEX Cloud, Polygon.io</span>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary full-width">Save & Sync Data</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="toast-container" class="toast-container"></div>
+    <script src="script.js"></script>
+</body>
+</html>
