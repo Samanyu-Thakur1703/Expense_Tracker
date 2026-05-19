@@ -1,10 +1,97 @@
 ﻿
+// ==================== API CLIENT ====================
+const API = {
+    BASE_URL: window.location.origin === 'file://' ? 'http://localhost:3001' : window.location.origin,
+
+    getToken: function() {
+        return localStorage.getItem(CONFIG.STORAGE_KEYS.TOKEN);
+    },
+
+    setToken: function(token) {
+        localStorage.setItem(CONFIG.STORAGE_KEYS.TOKEN, token);
+    },
+
+    clearToken: function() {
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.TOKEN);
+    },
+
+    request: function(method, path, body) {
+        var self = this;
+        var url = this.BASE_URL + path;
+        var headers = { 'Content-Type': 'application/json' };
+        var token = this.getToken();
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+        var options = { method: method, headers: headers };
+        if (body) options.body = JSON.stringify(body);
+
+        return fetch(url, options).then(function(res) {
+            return res.json().then(function(data) {
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        self.clearToken();
+                        AppState.sessionActive = false;
+                        AppState.user = null;
+                        localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
+                        localStorage.removeItem(CONFIG.STORAGE_KEYS.SESSION);
+                        App.showAuth();
+                    }
+                    return Promise.reject(new Error(data.error || 'Request failed'));
+                }
+                return data;
+            });
+        });
+    },
+
+    // Auth
+    login: function(email, password) {
+        return this.request('POST', '/api/auth/login', { email: email, password: password });
+    },
+
+    signup: function(name, email, password) {
+        return this.request('POST', '/api/auth/signup', { name: name, email: email, password: password });
+    },
+
+    getMe: function() {
+        return this.request('GET', '/api/auth/me');
+    },
+
+    updateSettings: function(data) {
+        return this.request('PUT', '/api/auth/settings', data);
+    },
+
+    // Expenses
+    getExpenses: function(params) {
+        var qs = Object.keys(params || {}).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        return this.request('GET', '/api/expenses' + (qs ? '?' + qs : ''));
+    },
+
+    createExpense: function(data) {
+        return this.request('POST', '/api/expenses', data);
+    },
+
+    updateExpense: function(id, data) {
+        return this.request('PUT', '/api/expenses/' + id, data);
+    },
+
+    deleteExpense: function(id) {
+        return this.request('DELETE', '/api/expenses/' + id);
+    },
+
+    getExpenseStats: function() {
+        return this.request('GET', '/api/expenses/stats');
+    }
+};
+
 // ==================== CONFIGURATION ====================
 const CONFIG = {
     APP_NAME: 'FinTrack AI',
     STORAGE_KEYS: {
         USER: 'fintrack_user',
         SESSION: 'fintrack_session',
+        TOKEN: 'fintrack_token',
         BALANCE: 'fintrack_balance',
         BUDGET: 'fintrack_budget',
         EXPENSES: 'fintrack_expenses',
@@ -192,20 +279,19 @@ const Auth = {
 
         if (!isValid) return;
 
-        const user = {
-            id: btoa(email).substr(0, 8),
-            name: email.split('@')[0],
-            email: email,
-            createdAt: new Date().toISOString()
-        };
-
-        AppState.user = user;
-        AppState.sessionActive = true;
-        localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(user));
-        localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, 'true');
-
-        Toast.show('Welcome back, ' + user.name, 'success');
-        App.showApp();
+        API.login(email, password).then(function(data) {
+            AppState.user = data.user;
+            AppState.sessionActive = true;
+            AppState.balance = data.user.balance || 0;
+            AppState.budget = data.user.budget || 0;
+            API.setToken(data.token);
+            localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(data.user));
+            localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, 'true');
+            Toast.show('Welcome back, ' + data.user.name, 'success');
+            App.showApp();
+        }).catch(function(err) {
+            Utils.showError('login-password-error', err.message);
+        });
     },
 
     handleSignup: function(e) {
@@ -235,25 +321,25 @@ const Auth = {
 
         if (!isValid) return;
 
-        const user = {
-            id: Utils.generateId(),
-            name: name,
-            email: email,
-            createdAt: new Date().toISOString()
-        };
-
-        AppState.user = user;
-        AppState.sessionActive = true;
-        localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(user));
-        localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, 'true');
-
-        Toast.show('Account created! Welcome, ' + name, 'success');
-        App.showApp();
+        API.signup(name, email, password).then(function(data) {
+            AppState.user = data.user;
+            AppState.sessionActive = true;
+            AppState.balance = data.user.balance || 0;
+            AppState.budget = data.user.budget || 0;
+            API.setToken(data.token);
+            localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(data.user));
+            localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, 'true');
+            Toast.show('Account created! Welcome, ' + name, 'success');
+            App.showApp();
+        }).catch(function(err) {
+            Utils.showError('signup-email-error', err.message);
+        });
     },
 
     logout: function() {
         AppState.user = null;
         AppState.sessionActive = false;
+        API.clearToken();
         localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
         localStorage.removeItem(CONFIG.STORAGE_KEYS.SESSION);
         App.showAuth();
@@ -342,8 +428,44 @@ const App = {
         }
 
         this.setupAppEventListeners();
-        this.renderAll();
+        this.refreshData();
         InvestmentModule.startStockUpdates();
+    },
+
+    refreshData: function() {
+        var self = this;
+        var expensesPromise = API.getExpenses({ limit: 1000 });
+        var statsPromise = API.getExpenseStats();
+
+        Promise.all([expensesPromise, statsPromise]).then(function(results) {
+            var expensesData = results[0];
+            var statsData = results[1];
+
+            // Normalize expenses: ensure 'desc' alias for backwards compatibility
+            AppState.expenses = expensesData.expenses.map(function(e) {
+                e.desc = e.description;
+                return e;
+            });
+
+            // Update stats
+            if (statsData.monthly_total !== undefined) {
+                AppState._monthlyTotal = statsData.monthly_total;
+                AppState._allTimeTotal = statsData.all_time_total;
+            }
+
+            self.renderAll();
+
+            if (AppState.currentView === 'expenses') {
+                ExpenseModule.renderTable();
+            }
+        }).catch(function(err) {
+            console.warn('Failed to refresh data from API, using local cache:', err.message);
+            // Fallback: render with whatever is in AppState
+            self.renderAll();
+            if (AppState.currentView === 'expenses') {
+                ExpenseModule.renderTable();
+            }
+        });
     },
 
     setupAppEventListeners: function() {
@@ -561,14 +683,14 @@ const ExpenseModule = {
     },
 
     openEditModal: function(id) {
-        const expense = AppState.expenses.find(function(e) { return e.id === id; });
+        const expense = AppState.expenses.find(function(e) { return e.id == id; });
         if (!expense) return;
 
         document.getElementById('modal-title').textContent = 'Edit Expense';
         document.getElementById('edit-expense-id').value = expense.id;
         document.getElementById('exp-amount').value = expense.amount;
         document.getElementById('exp-category').value = expense.category;
-        document.getElementById('exp-desc').value = expense.desc;
+        document.getElementById('exp-desc').value = expense.description || expense.desc || '';
         document.getElementById('exp-date').value = expense.date;
         Utils.clearAllErrors('expense-form');
         Modal.open('expense-modal');
@@ -608,47 +730,44 @@ const ExpenseModule = {
 
         if (!isValid) return;
 
-        const expense = { id: id || Utils.generateId(), amount: amount, category: category, desc: desc, date: date };
+        const data = { amount: amount, category: category, description: desc, date: date };
 
+        var self = this;
+        var promise;
         if (id) {
-            const idx = AppState.expenses.findIndex(function(x) { return x.id === id; });
-            if (idx !== -1) AppState.expenses[idx] = expense;
+            promise = API.updateExpense(id, data);
         } else {
-            AppState.expenses.unshift(expense);
+            promise = API.createExpense(data);
         }
 
-        App.saveState();
-        Modal.closeAll();
-        App.renderAll();
-
-        if (AppState.currentView === 'expenses') {
-            ExpenseModule.renderTable();
-        }
-
-        Toast.show(id ? 'Expense updated' : 'Expense recorded', 'success');
+        promise.then(function(result) {
+            Modal.closeAll();
+            App.refreshData();
+            Toast.show(id ? 'Expense updated' : 'Expense recorded', 'success');
+        }).catch(function(err) {
+            Toast.show('Failed to save expense: ' + err.message, 'error');
+        });
     },
 
     deleteExpense: function(id) {
         if (!confirm('Are you sure you want to delete this expense?')) return;
 
-        AppState.expenses = AppState.expenses.filter(function(x) { return x.id !== id; });
-        App.saveState();
-        App.renderAll();
-
-        if (AppState.currentView === 'expenses') {
-            ExpenseModule.renderTable();
-        }
-
-        Toast.show('Transaction removed', 'warning');
+        API.deleteExpense(id).then(function() {
+            App.refreshData();
+            Toast.show('Transaction removed', 'warning');
+        }).catch(function(err) {
+            Toast.show('Failed to delete: ' + err.message, 'error');
+        });
     },
 
-    renderTable: function() {
+    renderTable: function(expenses) {
         const cat = (document.getElementById('filter-category') || {}).value || 'all';
         const search = ((document.getElementById('expense-search') || {}).value || '').toLowerCase();
 
-        const filtered = AppState.expenses.filter(function(e) {
+        const filtered = (expenses || AppState.expenses).filter(function(e) {
             const matchCat = cat === 'all' || e.category === cat;
-            const matchSearch = e.desc.toLowerCase().indexOf(search) !== -1 || e.category.toLowerCase().indexOf(search) !== -1;
+            const desc = e.description || e.desc || '';
+            const matchSearch = desc.toLowerCase().indexOf(search) !== -1 || e.category.toLowerCase().indexOf(search) !== -1;
             return matchCat && matchSearch;
         });
 
@@ -665,9 +784,10 @@ const ExpenseModule = {
 
         let html = '';
         filtered.forEach(function(e) {
+            const desc = Utils.escapeHTML(e.description || e.desc || '');
             html += '<tr>' +
                 '<td>' + Utils.formatDate(e.date) + '</td>' +
-                '<td>' + Utils.escapeHTML(e.desc) + '</td>' +
+                '<td>' + desc + '</td>' +
                 '<td><span class="badge">' + Utils.escapeHTML(e.category) + '</span></td>' +
                 '<td class="negative">-' + Utils.formatCurrency(e.amount) + '</td>' +
                 '<td>' +
@@ -1347,16 +1467,17 @@ App.switchView = function(viewId) {
 
     switch(viewId) {
         case 'expenses':
-            ExpenseModule.renderTable();
+            App.refreshData();
             break;
         case 'insights':
             InsightsModule.renderFull();
             break;
         case 'investments':
             InvestmentModule.render();
+            EconomistTeam.renderTeam();
             break;
         case 'dashboard':
-            App.renderAll();
+            App.refreshData();
             break;
     }
 };
@@ -1482,15 +1603,27 @@ App.handleSetup = function(e) {
 
     if (!isValid) return;
 
-    AppState.balance = balance;
-    AppState.budget = budget;
-    localStorage.setItem(CONFIG.STORAGE_KEYS.BALANCE, balance);
-    localStorage.setItem(CONFIG.STORAGE_KEYS.BUDGET, budget);
-    localStorage.setItem(CONFIG.STORAGE_KEYS.SETUP_COMPLETE, 'true');
-
-    Modal.closeAll();
-    App.renderAll();
-    Toast.show('Setup complete! Start tracking your expenses.', 'success');
+    API.updateSettings({ balance: balance, budget: budget }).then(function(data) {
+        AppState.balance = data.user.balance;
+        AppState.budget = data.user.budget;
+        localStorage.setItem(CONFIG.STORAGE_KEYS.BALANCE, data.user.balance);
+        localStorage.setItem(CONFIG.STORAGE_KEYS.BUDGET, data.user.budget);
+        localStorage.setItem(CONFIG.STORAGE_KEYS.SETUP_COMPLETE, 'true');
+        localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(data.user));
+        Modal.closeAll();
+        App.renderAll();
+        Toast.show('Setup complete! Start tracking your expenses.', 'success');
+    }).catch(function(err) {
+        // Fallback to localStorage if API not available
+        AppState.balance = balance;
+        AppState.budget = budget;
+        localStorage.setItem(CONFIG.STORAGE_KEYS.BALANCE, balance);
+        localStorage.setItem(CONFIG.STORAGE_KEYS.BUDGET, budget);
+        localStorage.setItem(CONFIG.STORAGE_KEYS.SETUP_COMPLETE, 'true');
+        Modal.closeAll();
+        App.renderAll();
+        Toast.show('Setup complete! Start tracking your expenses.', 'success');
+    });
 }
 
 
