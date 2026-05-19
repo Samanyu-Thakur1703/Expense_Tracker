@@ -762,11 +762,6 @@ const App = {
             filterCategory.addEventListener('change', function() { ExpenseModule.renderTable(); });
         }
 
-        const expenseSearch = document.getElementById('expense-search');
-        if (expenseSearch) {
-            expenseSearch.addEventListener('input', Utils.debounce(function() { ExpenseModule.renderTable(); }, CONFIG.DEBOUNCE_DELAY));
-        }
-
         const globalSearch = document.getElementById('global-search');
         if (globalSearch) {
             globalSearch.addEventListener('input', Utils.debounce(function(e) { self.handleGlobalSearch(e); }, CONFIG.DEBOUNCE_DELAY));
