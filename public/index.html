@@ -134,10 +134,20 @@
             </div>
         </aside>
 
+        <!-- Sidebar Overlay (mobile) -->
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
         <!-- Main Content Wrapper -->
         <main class="main-content">
+            <!-- Floating sidebar toggle (desktop collapsed reopen) -->
+            <button id="sidebar-toggle-float" class="sidebar-toggle-float" title="Open Sidebar">
+                <i data-lucide="panel-left-open"></i>
+            </button>
             <!-- Topbar -->
             <header class="topbar">
+                <button id="sidebar-hamburger" class="icon-btn sidebar-hamburger" title="Toggle Sidebar">
+                    <i data-lucide="menu"></i>
+                </button>
                 <div class="search-container">
                     <i data-lucide="search" class="search-icon"></i>
                     <input type="text" id="global-search" placeholder="Search transactions, stocks, or insights..." autocomplete="off" aria-label="Search transactions, stocks, or insights">

@@ -262,6 +262,7 @@ body {
     flex-direction: column;
     z-index: 100;
     backdrop-filter: blur(10px);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .main-content { 
@@ -326,13 +327,69 @@ body {
 }
 
 .sidebar.collapsed {
-    width: 70px;
-    padding: 2rem 0.5rem;
+    width: 0;
+    padding: 0;
+    overflow: hidden;
+    border-right: none;
     transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar:not(.collapsed) {
     transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Floating sidebar toggle (visible when sidebar is collapsed) */
+/* Sidebar hamburger (hidden on desktop, shown on mobile) */
+.sidebar-hamburger {
+    display: none;
+    margin-right: 0.5rem;
+}
+
+.sidebar-toggle-float {
+    position: fixed;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 99;
+    transition: var(--transition);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.sidebar-toggle-float:hover {
+    background: var(--gold-primary);
+    color: var(--bg-primary);
+    border-color: var(--gold-primary);
+}
+.sidebar.collapsed ~ .main-content .sidebar-toggle-float {
+    display: flex;
+}
+.sidebar:not(.collapsed) ~ .main-content .sidebar-toggle-float {
+    display: none;
+}
+
+/* Sidebar overlay for mobile */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+.sidebar-overlay.active {
+    opacity: 1;
+    pointer-events: all;
 }
 
 .sidebar.collapsed .logo-text,
@@ -370,8 +427,8 @@ body {
     justify-content: center;
 }
 
-.sidebar.collapsed + .main-content {
-    margin-left: 70px;
+.sidebar.collapsed ~ .main-content {
+    margin-left: 0;
     transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -1445,13 +1502,63 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 @media (max-width: 768px) {
     .auth-wrapper { flex-direction: column; max-width: 500px; height: auto; min-height: auto; }
     .auth-info { display: none; }
-    .sidebar { width: 80px; padding: 1.5rem 1rem; }
-    .sidebar span, .logo span, .user-info { display: none; }
-    .nav-item { justify-content: center; padding: 0.9rem; }
-    .nav-item span { display: none; }
-    .main-content { margin-left: 80px; }
+    
+    /* Sidebar becomes off-canvas drawer */
+    .sidebar {
+        width: 280px;
+        padding: 2rem 1.5rem;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-right: 1px solid var(--glass-border);
+    }
+    .sidebar.open {
+        transform: translateX(0);
+    }
+    .sidebar .logo-text,
+    .sidebar .nav-item span,
+    .sidebar .user-info,
+    .sidebar .user-role,
+    .sidebar .logout {
+        display: flex;
+    }
+    .sidebar .nav-item {
+        justify-content: flex-start;
+        padding: 0.9rem 1.25rem;
+    }
+    .sidebar .sidebar-footer {
+        display: flex;
+    }
+    .sidebar-overlay {
+        display: block;
+    }
+    .sidebar-overlay.active {
+        display: block;
+    }
+    .sidebar.collapsed {
+        width: 280px;
+        padding: 2rem 1.5rem;
+        overflow: visible;
+        border-right: 1px solid var(--glass-border);
+        transform: translateX(-100%);
+    }
+    .sidebar.collapsed.open {
+        transform: translateX(0);
+    }
+    .sidebar.collapsed ~ .main-content {
+        margin-left: 0;
+    }
+    .main-content {
+        margin-left: 0;
+    }
+    .sidebar-hamburger {
+        display: flex !important;
+    }
+    .sidebar-toggle-float {
+        display: none !important;
+    }
+    
     .summary-grid { grid-template-columns: 1fr; }
-    .topbar { padding: 0 1.5rem; }
+    .topbar { padding: 0 1rem; }
     .search-container { display: none; }
     .form-row { grid-template-columns: 1fr; }
     .investment-layout { grid-template-columns: 1fr; }
