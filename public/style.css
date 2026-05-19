@@ -970,6 +970,41 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
+/* Loading state for cards/table via data-loading attribute */
+.summary-card[data-loading="true"] h2,
+.summary-card[data-loading="true"] .card-subtext {
+    visibility: hidden;
+}
+.summary-card[data-loading="true"] {
+    position: relative;
+}
+.summary-card[data-loading="true"]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--glass-bg) 50%, var(--bg-tertiary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+#expenses-tbody[data-loading="true"] {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+/* Danger button for delete modals */
+.btn-danger {
+    background: var(--negative);
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: opacity 0.2s;
+}
+.btn-danger:hover { opacity: 0.85; }
+
 /* Buttons - Luxury Style */
 .btn { 
     display: inline-flex; 
@@ -1066,6 +1101,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
 .modal-footer { margin-top: 2.5rem; display: flex; justify-content: flex-end; }
+.modal-body { line-height: 1.6; }
 
 /* Toast - Luxury Style */
 .toast-container { 

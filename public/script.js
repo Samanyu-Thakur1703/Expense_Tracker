@@ -52,6 +52,14 @@ const API = {
         return this.request('POST', '/api/auth/signup', { name: name, email: email, password: password });
     },
 
+    sendOtp: function(email) {
+        return this.request('POST', '/api/auth/send-otp', { email: email });
+    },
+
+    verifyOtp: function(email, code) {
+        return this.request('POST', '/api/auth/verify-otp', { email: email, code: code });
+    },
+
     getMe: function() {
         return this.request('GET', '/api/auth/me');
     },
@@ -98,7 +106,9 @@ const CONFIG = {
         THEME: 'fintrack_theme',
         API_CONFIG: 'fintrack_api_config',
         SETUP_COMPLETE: 'fintrack_setup_complete',
-        SIDEBAR_COLLAPSED: 'fintrack_sidebar_collapsed'
+        SIDEBAR_COLLAPSED: 'fintrack_sidebar_collapsed',
+        FILTER_STATE: 'fintrack_filter_state',
+        EXPENSE_OFFSET: 'fintrack_expense_offset'
     },
     API: {
         ALPHA_VANTAGE_BASE: 'https://www.alphavantage.co/query',
@@ -107,7 +117,48 @@ const CONFIG = {
     },
     DEBOUNCE_DELAY: 300,
     STOCK_UPDATE_INTERVAL: 60000,
-    CATEGORIES: ['Food', 'Travel', 'Bills', 'Shopping', 'Health', 'Investment', 'Entertainment', 'Others']
+    CATEGORIES: ['Food', 'Travel', 'Bills', 'Shopping', 'Health', 'Investment', 'Entertainment', 'Others'],
+    PAGE_SIZE: 20,
+    CATEGORY_COLORS: {
+        Food: '#F59E0B',
+        Travel: '#3B82F6',
+        Bills: '#EF4444',
+        Shopping: '#8B5CF6',
+        Health: '#10B981',
+        Investment: '#6366F1',
+        Entertainment: '#EC4899',
+        Others: '#6B7280'
+    }
+};
+
+// ==================== LOADING STATE ====================
+const LoadingState = {
+    show: function(containerId) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        el.dataset.loading = 'true';
+    },
+    hide: function(containerId) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        el.dataset.loading = 'false';
+    },
+    showCards: function() {
+        document.querySelectorAll('.summary-card').forEach(function(c) { c.dataset.loading = 'true'; });
+    },
+    hideCards: function() {
+        document.querySelectorAll('.summary-card').forEach(function(c) { c.dataset.loading = 'false'; });
+    },
+    showTable: function() {
+        var tb = document.getElementById('expenses-tbody');
+        if (!tb) return;
+        tb.dataset.loading = 'true';
+    },
+    hideTable: function() {
+        var tb = document.getElementById('expenses-tbody');
+        if (!tb) return;
+        tb.dataset.loading = 'false';
+    }
 };
 
 // ==================== UTILITIES MODULE ====================
@@ -195,7 +246,11 @@ const AppState = {
     theme: localStorage.getItem(CONFIG.STORAGE_KEYS.THEME) || 'light',
     apiConfig: JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEYS.API_CONFIG)) || { provider: 'alpha_vantage', key: '' },
     charts: {},
-    stockUpdateInterval: null
+    stockUpdateInterval: null,
+    _monthlyTotal: 0,
+    _allTimeTotal: 0,
+    _hasMore: false,
+    expenseOffset: parseInt(sessionStorage.getItem(CONFIG.STORAGE_KEYS.EXPENSE_OFFSET)) || 0
 };
 
 // ==================== AUTH MODULE ====================
@@ -213,11 +268,20 @@ const Auth = {
         return AppState.sessionActive && AppState.user !== null;
     },
 
+    _otpTimer: null,
+    _otpEmail: '',
+
     setupListeners: function() {
         const toggleSignup = document.getElementById('toggle-signup');
         const toggleLogin = document.getElementById('toggle-login');
+        const toggleOtp = document.getElementById('toggle-otp');
+        const toggleOtpBack = document.getElementById('toggle-otp-back');
         const loginForm = document.getElementById('login-form');
         const signupForm = document.getElementById('signup-form');
+        const sendOtpBtn = document.getElementById('send-otp-btn');
+        const verifyOtpBtn = document.getElementById('verify-otp-btn');
+        const otpResend = document.getElementById('otp-resend');
+        const otpCode = document.getElementById('otp-code');
 
         if (toggleSignup) {
             toggleSignup.addEventListener('click', function(e) {
@@ -233,6 +297,20 @@ const Auth = {
             });
         }
 
+        if (toggleOtp) {
+            toggleOtp.addEventListener('click', function(e) {
+                e.preventDefault();
+                Auth.showOtpForm();
+            });
+        }
+
+        if (toggleOtpBack) {
+            toggleOtpBack.addEventListener('click', function(e) {
+                e.preventDefault();
+                Auth.showLoginForm();
+            });
+        }
+
         if (loginForm) {
             loginForm.addEventListener('submit', function(e) { Auth.handleLogin(e); });
         }
@@ -240,11 +318,46 @@ const Auth = {
         if (signupForm) {
             signupForm.addEventListener('submit', function(e) { Auth.handleSignup(e); });
         }
+
+        if (sendOtpBtn) {
+            sendOtpBtn.addEventListener('click', function() { Auth.handleSendOtp(); });
+        }
+
+        if (verifyOtpBtn) {
+            verifyOtpBtn.addEventListener('click', function() { Auth.handleVerifyOtp(); });
+        }
+
+        if (otpCode) {
+            otpCode.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') Auth.handleVerifyOtp();
+            });
+        }
+
+        if (otpResend) {
+            otpResend.addEventListener('click', function(e) {
+                e.preventDefault();
+                Auth.handleSendOtp();
+            });
+        }
+    },
+
+    showOtpForm: function() {
+        document.getElementById('login-form').classList.add('hidden');
+        document.getElementById('signup-form').classList.add('hidden');
+        document.getElementById('otp-form').classList.remove('hidden');
+        document.getElementById('auth-title').textContent = 'Email Login';
+        document.getElementById('auth-subtitle').textContent = 'Verify your identity via email';
+        // Reset
+        document.getElementById('otp-email-step').classList.remove('hidden');
+        document.getElementById('otp-verify-step').classList.add('hidden');
+        document.getElementById('otp-code').value = '';
+        Utils.clearAllErrors('otp-form');
     },
 
     showLoginForm: function() {
         document.getElementById('login-form').classList.remove('hidden');
         document.getElementById('signup-form').classList.add('hidden');
+        document.getElementById('otp-form').classList.add('hidden');
         document.getElementById('auth-title').textContent = 'Welcome Back';
         document.getElementById('auth-subtitle').textContent = 'Log in to manage your finances';
         Utils.clearAllErrors('login-form');
@@ -253,6 +366,7 @@ const Auth = {
     showSignupForm: function() {
         document.getElementById('signup-form').classList.remove('hidden');
         document.getElementById('login-form').classList.add('hidden');
+        document.getElementById('otp-form').classList.add('hidden');
         document.getElementById('auth-title').textContent = 'Create Account';
         document.getElementById('auth-subtitle').textContent = 'Join the future of finance today';
         Utils.clearAllErrors('signup-form');
@@ -334,6 +448,77 @@ const Auth = {
         }).catch(function(err) {
             Utils.showError('signup-email-error', err.message);
         });
+    },
+
+    handleSendOtp: function() {
+        Utils.clearAllErrors('otp-form');
+        var email = document.getElementById('otp-email').value.trim();
+        if (!Utils.isValidEmail(email)) {
+            Utils.showError('otp-email-error', 'Please enter a valid email address');
+            return;
+        }
+        var btn = document.getElementById('send-otp-btn');
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+        API.sendOtp(email).then(function() {
+            Auth._otpEmail = email;
+            document.getElementById('otp-email-step').classList.add('hidden');
+            document.getElementById('otp-verify-step').classList.remove('hidden');
+            document.getElementById('otp-email-display').textContent = email;
+            btn.disabled = false;
+            btn.textContent = 'Send Verification Code';
+            Auth._startOtpTimer();
+        }).catch(function(err) {
+            btn.disabled = false;
+            btn.textContent = 'Send Verification Code';
+            Utils.showError('otp-email-error', err.message);
+        });
+    },
+
+    handleVerifyOtp: function() {
+        Utils.clearAllErrors('otp-form');
+        var code = document.getElementById('otp-code').value.trim();
+        if (code.length !== 6 || isNaN(code)) {
+            Utils.showError('otp-code-error', 'Please enter a valid 6-digit code');
+            return;
+        }
+        var email = Auth._otpEmail;
+        var btn = document.getElementById('verify-otp-btn');
+        btn.disabled = true;
+        btn.textContent = 'Verifying...';
+        API.verifyOtp(email, code).then(function(data) {
+            if (Auth._otpTimer) clearInterval(Auth._otpTimer);
+            AppState.user = data.user;
+            AppState.sessionActive = true;
+            AppState.balance = data.user.balance || 0;
+            AppState.budget = data.user.budget || 0;
+            API.setToken(data.token);
+            localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(data.user));
+            localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, 'true');
+            Toast.show(data.is_new ? 'Account created! Welcome, ' + data.user.name : 'Welcome back, ' + data.user.name, 'success');
+            App.showApp();
+        }).catch(function(err) {
+            btn.disabled = false;
+            btn.textContent = 'Verify';
+            Utils.showError('otp-code-error', err.message);
+        });
+    },
+
+    _startOtpTimer: function() {
+        if (Auth._otpTimer) clearInterval(Auth._otpTimer);
+        var seconds = 600;
+        var display = document.getElementById('otp-countdown');
+        Auth._otpTimer = setInterval(function() {
+            seconds--;
+            var m = Math.floor(seconds / 60);
+            var s = seconds % 60;
+            if (display) display.textContent = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+            if (seconds <= 0) {
+                clearInterval(Auth._otpTimer);
+                Auth._otpTimer = null;
+                if (display) display.textContent = 'Expired';
+            }
+        }, 1000);
     },
 
     logout: function() {
@@ -434,37 +619,77 @@ const App = {
 
     refreshData: function() {
         var self = this;
-        var expensesPromise = API.getExpenses({ limit: 1000 });
+        LoadingState.showCards();
+        LoadingState.showTable();
+
+        var limit = CONFIG.PAGE_SIZE;
+        var offset = AppState.expenseOffset || 0;
+        var params = { limit: limit, offset: offset };
+        // Restore filters from session
+        var savedFilter = sessionStorage.getItem(CONFIG.STORAGE_KEYS.FILTER_STATE);
+        if (savedFilter) {
+            try {
+                var f = JSON.parse(savedFilter);
+                if (f.category && f.category !== 'all') params.category = f.category;
+                if (f.search) params.search = f.search;
+            } catch(e) {}
+        }
+        var expensesPromise = API.getExpenses(params);
         var statsPromise = API.getExpenseStats();
 
         Promise.all([expensesPromise, statsPromise]).then(function(results) {
             var expensesData = results[0];
             var statsData = results[1];
 
-            // Normalize expenses: ensure 'desc' alias for backwards compatibility
             AppState.expenses = expensesData.expenses.map(function(e) {
                 e.desc = e.description;
                 return e;
             });
+            AppState._hasMore = expensesData.expenses.length >= limit;
 
-            // Update stats
             if (statsData.monthly_total !== undefined) {
                 AppState._monthlyTotal = statsData.monthly_total;
                 AppState._allTimeTotal = statsData.all_time_total;
             }
 
+            LoadingState.hideCards();
+            LoadingState.hideTable();
             self.renderAll();
-
             if (AppState.currentView === 'expenses') {
                 ExpenseModule.renderTable();
+                ExpenseModule.renderLoadMore();
             }
         }).catch(function(err) {
             console.warn('Failed to refresh data from API, using local cache:', err.message);
-            // Fallback: render with whatever is in AppState
+            LoadingState.hideCards();
+            LoadingState.hideTable();
             self.renderAll();
             if (AppState.currentView === 'expenses') {
                 ExpenseModule.renderTable();
             }
+        });
+    },
+
+    loadMoreExpenses: function() {
+        var self = this;
+        var offset = (AppState.expenseOffset || 0) + CONFIG.PAGE_SIZE;
+        AppState.expenseOffset = offset;
+        sessionStorage.setItem(CONFIG.STORAGE_KEYS.EXPENSE_OFFSET, offset);
+
+        LoadingState.showTable();
+        API.getExpenses({ limit: CONFIG.PAGE_SIZE, offset: offset }).then(function(data) {
+            var newExpenses = data.expenses.map(function(e) {
+                e.desc = e.description;
+                return e;
+            });
+            AppState.expenses = AppState.expenses.concat(newExpenses);
+            AppState._hasMore = newExpenses.length >= CONFIG.PAGE_SIZE;
+            LoadingState.hideTable();
+            ExpenseModule.renderTable();
+            ExpenseModule.renderLoadMore();
+        }).catch(function(err) {
+            LoadingState.hideTable();
+            Toast.show('Failed to load more expenses: ' + err.message, 'error');
         });
     },
 
@@ -507,6 +732,19 @@ const App = {
         const expenseForm = document.getElementById('expense-form');
         if (expenseForm) {
             expenseForm.addEventListener('submit', function(e) { ExpenseModule.handleSubmit(e); });
+        }
+
+        // Filter persistence
+        var filterCat = document.getElementById('filter-category');
+        var expenseSearch = document.getElementById('expense-search');
+        if (filterCat) {
+            filterCat.addEventListener('change', function() { ExpenseModule.saveFilterState(); ExpenseModule.renderTable(); });
+        }
+        if (expenseSearch) {
+            expenseSearch.addEventListener('input', Utils.debounce(function() {
+                ExpenseModule.saveFilterState();
+                ExpenseModule.renderTable();
+            }, CONFIG.DEBOUNCE_DELAY));
         }
 
         const setupForm = document.getElementById('setup-form');
@@ -842,13 +1080,24 @@ const ExpenseModule = {
     },
 
     deleteExpense: function(id) {
-        if (!confirm('Are you sure you want to delete this expense?')) return;
-
-        API.deleteExpense(id).then(function() {
-            App.refreshData();
-            Toast.show('Transaction removed', 'warning');
-        }).catch(function(err) {
-            Toast.show('Failed to delete: ' + err.message, 'error');
+        Modal.show('Confirm Delete',
+            '<p style="margin-bottom:1.5rem; color:var(--text-muted)">Are you sure you want to remove this transaction? This action cannot be undone.</p>' +
+            '<div class="modal-actions" style="display:flex; gap:1rem; justify-content:flex-end">' +
+                '<button class="btn btn-secondary" onclick="Modal.closeAll()">Cancel</button>' +
+                '<button class="btn btn-danger" id="confirm-delete-btn" style="background:var(--negative); color:#fff; border:none; padding:0.75rem 1.5rem; border-radius:12px; cursor:pointer; font-weight:600">Delete</button>' +
+            '</div>',
+            { wide: false }
+        );
+        document.getElementById('confirm-delete-btn').addEventListener('click', function() {
+            Modal.closeAll();
+            API.deleteExpense(id).then(function() {
+                AppState.expenseOffset = 0;
+                sessionStorage.removeItem(CONFIG.STORAGE_KEYS.EXPENSE_OFFSET);
+                App.refreshData();
+                Toast.show('Transaction removed', 'warning');
+            }).catch(function(err) {
+                Toast.show('Failed to delete: ' + err.message, 'error');
+            });
         });
     },
 
@@ -867,20 +1116,31 @@ const ExpenseModule = {
         if (!tbody) return;
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:4rem; color:var(--text-muted)">' +
-                '<div style="font-size:1.1rem; font-weight:700">No results found</div>' +
-                '<div>Try adjusting your filters or search query</div>' +
-            '</td></tr>';
+            const hasFilters = cat !== 'all' || search.length > 0;
+            if (hasFilters) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:4rem; color:var(--text-muted)">' +
+                    '<div style="font-size:1.1rem; font-weight:700; margin-bottom:0.5rem">No results found</div>' +
+                    '<div style="font-size:0.9rem">Try adjusting your filters or search query</div>' +
+                '</td></tr>';
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:4rem; color:var(--text-muted)">' +
+                    '<div style="font-size:2rem; margin-bottom:0.75rem"><i data-lucide="receipt" width="48" height="48" style="opacity:0.3"></i></div>' +
+                    '<div style="font-size:1.1rem; font-weight:700; margin-bottom:0.5rem">No expenses yet</div>' +
+                    '<div style="font-size:0.9rem; margin-bottom:1rem">Click <strong>Add Expense</strong> to get started on your financial journey</div>' +
+                '</td></tr>';
+            }
+            if (window.lucide) lucide.createIcons();
             return;
         }
 
         let html = '';
         filtered.forEach(function(e) {
             const desc = Utils.escapeHTML(e.description || e.desc || '');
+            const catColor = CONFIG.CATEGORY_COLORS[e.category] || '#6B7280';
             html += '<tr>' +
                 '<td>' + Utils.formatDate(e.date) + '</td>' +
                 '<td>' + desc + '</td>' +
-                '<td><span class="badge">' + Utils.escapeHTML(e.category) + '</span></td>' +
+                '<td><span class="badge" style="background:' + catColor + '20; color:' + catColor + '; border:1px solid ' + catColor + '40">' + Utils.escapeHTML(e.category) + '</span></td>' +
                 '<td class="negative">-' + Utils.formatCurrency(e.amount) + '</td>' +
                 '<td>' +
                     '<button onclick="ExpenseModule.openEditModal(\'' + e.id + '\')" class="icon-btn-small" style="color:var(--gold-primary); margin-right:0.5rem"><i data-lucide="edit"></i></button>' +
@@ -891,6 +1151,43 @@ const ExpenseModule = {
         tbody.innerHTML = html;
 
         if (window.lucide) lucide.createIcons();
+    },
+
+    // Load More button
+    renderLoadMore: function() {
+        var container = document.getElementById('load-more-container');
+        if (!container) return;
+        if (AppState._hasMore && AppState.expenses.length > 0) {
+            container.innerHTML = '<button class="btn btn-secondary" id="load-more-btn" style="width:100%; justify-content:center; padding:0.75rem">' +
+                '<i data-lucide="chevron-down"></i> Load More (' + AppState.expenses.length + ' loaded)</button>';
+            if (window.lucide) lucide.createIcons();
+            document.getElementById('load-more-btn').addEventListener('click', function() {
+                App.loadMoreExpenses();
+            });
+        } else if (AppState.expenses.length > 0) {
+            container.innerHTML = '<div style="text-align:center; padding:0.75rem; color:var(--text-muted); font-size:0.85rem">' +
+                'Showing all ' + AppState.expenses.length + ' expenses</div>';
+        } else {
+            container.innerHTML = '';
+        }
+    },
+
+    // Filter persistence
+    saveFilterState: function() {
+        var cat = (document.getElementById('filter-category') || {}).value || 'all';
+        var search = (document.getElementById('expense-search') || {}).value || '';
+        sessionStorage.setItem(CONFIG.STORAGE_KEYS.FILTER_STATE, JSON.stringify({ category: cat, search: search }));
+    },
+    restoreFilterState: function() {
+        var saved = sessionStorage.getItem(CONFIG.STORAGE_KEYS.FILTER_STATE);
+        if (!saved) return;
+        try {
+            var f = JSON.parse(saved);
+            var catEl = document.getElementById('filter-category');
+            var searchEl = document.getElementById('expense-search');
+            if (catEl && f.category) catEl.value = f.category;
+            if (searchEl && f.search) searchEl.value = f.search;
+        } catch(e) {}
     },
 
     exportCSV: function() {
@@ -1421,11 +1718,43 @@ const Modal = {
             document.getElementById('api-provider').value = AppState.apiConfig.provider;
             document.getElementById('api-key').value = AppState.apiConfig.key;
         }
-        document.getElementById(id).classList.add('active');
+        var el = document.getElementById(id);
+        if (el) el.classList.add('active');
     },
 
     closeAll: function() {
         document.querySelectorAll('.modal').forEach(function(m) { m.classList.remove('active'); });
+    },
+
+    // Create a dynamic modal on-the-fly
+    show: function(title, bodyHtml, opts) {
+        opts = opts || {};
+        var id = 'dynamic-modal-' + Date.now();
+        var div = document.createElement('div');
+        div.className = 'modal active';
+        div.id = id;
+        div.innerHTML =
+            '<div class="modal-content' + (opts.wide === false ? ' small' : '') + '">' +
+                '<div class="modal-header">' +
+                    '<h2>' + (title || '') + '</h2>' +
+                    '<button class="close-modal" onclick="Modal.closeAll()"><i data-lucide="x"></i></button>' +
+                '</div>' +
+                '<div class="modal-body">' + (bodyHtml || '') + '</div>' +
+            '</div>';
+        // Close on overlay click
+        div.addEventListener('click', function(e) {
+            if (e.target === div) Modal.closeAll();
+        });
+        document.body.appendChild(div);
+        if (window.lucide) lucide.createIcons();
+        // Auto-remove when closed
+        var observer = new MutationObserver(function() {
+            if (!div.classList.contains('active')) {
+                setTimeout(function() { if (div.parentNode) div.parentNode.removeChild(div); }, 300);
+                observer.disconnect();
+            }
+        });
+        observer.observe(div, { attributes: true, attributeFilter: ['class'] });
     }
 };
 
@@ -1559,6 +1888,7 @@ App.switchView = function(viewId) {
 
     switch(viewId) {
         case 'expenses':
+            ExpenseModule.restoreFilterState();
             App.refreshData();
             break;
         case 'insights':

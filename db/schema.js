@@ -71,6 +71,20 @@ async function initDatabase() {
     `);
 
     await database.execute(`
+        CREATE TABLE IF NOT EXISTS otp_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            code TEXT NOT NULL,
+            purpose TEXT DEFAULT 'login',
+            expires_at DATETIME NOT NULL,
+            used INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_otp_email_code ON otp_codes(email, code)');
+
+    await database.execute(`
         CREATE TABLE IF NOT EXISTS api_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

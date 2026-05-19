@@ -1,7 +1,24 @@
 require('dotenv').config();
 
+// Validate critical env vars in production
+if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+    const missing = [];
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'fintrack-secret-key-change-in-production') {
+        missing.push('JWT_SECRET (set a strong random value)');
+    }
+    if (!process.env.TURSO_DATABASE_URL) missing.push('TURSO_DATABASE_URL');
+    if (!process.env.TURSO_AUTH_TOKEN) missing.push('TURSO_AUTH_TOKEN');
+    if (missing.length) {
+        console.error('Missing required environment variables:', missing.join(', '));
+        if (!process.env.VERCEL) process.exit(1);
+    }
+}
+
 const express = require('express');
+const helmet = require('helmet');
 const cors = require('cors');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { initDatabase } = require('./db/schema');
 const authRoutes = require('./routes/auth');
@@ -9,10 +26,39 @@ const expenseRoutes = require('./routes/expenses');
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Security headers
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+
+// Request logging
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+// CORS — allow production domain + local dev
+const allowedOrigins = [
+    'https://extracker-tau.vercel.app',
+    'http://localhost:3001',
+    'http://localhost:3000',
+    'http://127.0.0.1:3001',
+];
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+        callback(null, true); // allow any in dev — relax in true production
+    },
+    credentials: true,
+}));
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+
+// Rate limiting on auth routes
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { error: 'Too many attempts, please try again after 15 minutes' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use('/api/auth', authLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -38,9 +84,18 @@ app.use((err, req, res, next) => {
 if (require.main === module) {
     const PORT = process.env.PORT || 3001;
     initDatabase().then(() => {
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`FinTrack AI API server running on http://localhost:${PORT}`);
             console.log('Database: SQLite via @libsql/client');
+        });
+        // Graceful shutdown
+        process.on('SIGTERM', () => {
+            console.log('SIGTERM received, shutting down...');
+            server.close(() => process.exit(0));
+        });
+        process.on('SIGINT', () => {
+            console.log('SIGINT received, shutting down...');
+            server.close(() => process.exit(0));
         });
     }).catch(err => {
         console.error('Failed to initialize database:', err);
