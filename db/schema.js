@@ -1,32 +1,36 @@
-const Database = require('better-sqlite3');
+const { createClient } = require('@libsql/client');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-
-const DB_PATH = path.join(__dirname, '..', 'data', 'fintrack.db');
+const fs = require('fs');
 
 let db;
 
 function getDatabase() {
     if (db) return db;
 
-    const fs = require('fs');
-    const dataDir = path.join(__dirname, '..', 'data');
-    if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
+    const tursoUrl = process.env.TURSO_DATABASE_URL;
+    const tursoToken = process.env.TURSO_AUTH_TOKEN;
+
+    if (tursoUrl && tursoToken) {
+        console.log('Connecting to Turso remote database...');
+        db = createClient({ url: tursoUrl, authToken: tursoToken });
+    } else {
+        const dataDir = path.join(__dirname, '..', 'data');
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+        const dbPath = path.join(dataDir, 'fintrack.db');
+        console.log('Connecting to local SQLite:', dbPath);
+        db = createClient({ url: 'file:' + dbPath });
     }
-
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
-
-    createTables(db);
-    createDefaultUser(db);
 
     return db;
 }
 
-function createTables(database) {
-    database.exec(`
+async function initDatabase() {
+    const database = getDatabase();
+
+    await database.execute(`
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -36,8 +40,10 @@ function createTables(database) {
             budget REAL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
+        )
+    `);
 
+    await database.execute(`
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -47,8 +53,10 @@ function createTables(database) {
             date DATE NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
+        )
+    `);
 
+    await database.execute(`
         CREATE TABLE IF NOT EXISTS investments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -59,8 +67,10 @@ function createTables(database) {
             current_price REAL NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
+        )
+    `);
 
+    await database.execute(`
         CREATE TABLE IF NOT EXISTS api_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -68,23 +78,27 @@ function createTables(database) {
             key TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date);
-        CREATE INDEX IF NOT EXISTS idx_expenses_user_category ON expenses(user_id, category);
-        CREATE INDEX IF NOT EXISTS idx_investments_user_symbol ON investments(user_id, symbol);
+        )
     `);
-}
 
-function createDefaultUser(database) {
-    const existing = database.prepare('SELECT id FROM users WHERE email = ?').get('demo@fintrack.com');
-    if (!existing) {
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date)');
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_expenses_user_category ON expenses(user_id, category)');
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_investments_user_symbol ON investments(user_id, symbol)');
+
+    const existing = await database.execute({
+        sql: 'SELECT id FROM users WHERE email = ?',
+        args: ['demo@fintrack.com']
+    });
+
+    if (existing.rows.length === 0) {
+        console.log('Seeding demo user...');
         const hash = bcrypt.hashSync('demo1234', 8);
-        const insertResult = database.prepare(
-            'INSERT INTO users (name, email, password_hash, balance, budget) VALUES (?, ?, ?, ?, ?)'
-        ).run('Demo User', 'demo@fintrack.com', hash, 50000, 20000);
+        const insertResult = await database.execute({
+            sql: 'INSERT INTO users (name, email, password_hash, balance, budget) VALUES (?, ?, ?, ?, ?)',
+            args: ['Demo User', 'demo@fintrack.com', hash, 50000, 20000]
+        });
 
-        const userId = insertResult.lastInsertRowid;
+        const userId = Number(insertResult.lastInsertRowid);
 
         const sampleExpenses = [
             { amount: 450, category: 'Food', description: 'Grocery shopping', date: '2026-05-12' },
@@ -96,16 +110,15 @@ function createDefaultUser(database) {
             { amount: 1500, category: 'Entertainment', description: 'Movie tickets + snacks', date: '2026-05-17' },
         ];
 
-        const insertExpense = database.prepare(
-            'INSERT INTO expenses (user_id, amount, category, description, date) VALUES (?, ?, ?, ?, ?)'
-        );
-        const insertMany = database.transaction((expenses) => {
-            for (const exp of expenses) {
-                insertExpense.run(userId, exp.amount, exp.category, exp.description, exp.date);
-            }
-        });
-        insertMany(sampleExpenses);
+        for (const exp of sampleExpenses) {
+            await database.execute({
+                sql: 'INSERT INTO expenses (user_id, amount, category, description, date) VALUES (?, ?, ?, ?, ?)',
+                args: [userId, exp.amount, exp.category, exp.description, exp.date]
+            });
+        }
+
+        console.log('Demo user seeded with', sampleExpenses.length, 'sample expenses');
     }
 }
 
-module.exports = { getDatabase };
+module.exports = { getDatabase, initDatabase };

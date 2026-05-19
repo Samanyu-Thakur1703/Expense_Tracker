@@ -4,43 +4,43 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/', authenticate, (req, res) => {
+router.get('/', authenticate, async (req, res) => {
     try {
         const db = getDatabase();
         const { category, search, start_date, end_date, limit = 100, offset = 0 } = req.query;
 
         let sql = 'SELECT id, amount, category, description, date, created_at FROM expenses WHERE user_id = ?';
-        const params = [req.userId];
+        const args = [req.userId];
 
         if (category && category !== 'all') {
             sql += ' AND category = ?';
-            params.push(category);
+            args.push(category);
         }
         if (search) {
             sql += ' AND (description LIKE ? OR category LIKE ?)';
-            params.push(`%${search}%`, `%${search}%`);
+            args.push(`%${search}%`, `%${search}%`);
         }
         if (start_date) {
             sql += ' AND date >= ?';
-            params.push(start_date);
+            args.push(start_date);
         }
         if (end_date) {
             sql += ' AND date <= ?';
-            params.push(end_date);
+            args.push(end_date);
         }
 
         sql += ' ORDER BY date DESC LIMIT ? OFFSET ?';
-        params.push(parseInt(limit), parseInt(offset));
+        args.push(parseInt(limit), parseInt(offset));
 
-        const expenses = db.prepare(sql).all(...params);
-        res.json({ expenses });
+        const result = await db.execute({ sql, args });
+        res.json({ expenses: result.rows });
     } catch (err) {
         console.error('Get expenses error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-router.post('/', authenticate, (req, res) => {
+router.post('/', authenticate, async (req, res) => {
     try {
         const { amount, category, description, date } = req.body;
 
@@ -58,14 +58,15 @@ router.post('/', authenticate, (req, res) => {
         }
 
         const db = getDatabase();
-        const result = db.prepare(
-            'INSERT INTO expenses (user_id, amount, category, description, date) VALUES (?, ?, ?, ?, ?)'
-        ).run(req.userId, amount, category, description, date);
+        const result = await db.execute({
+            sql: 'INSERT INTO expenses (user_id, amount, category, description, date) VALUES (?, ?, ?, ?, ?)',
+            args: [req.userId, amount, category, description, date]
+        });
 
         res.status(201).json({
             message: 'Expense created',
             expense: {
-                id: result.lastInsertRowid,
+                id: Number(result.lastInsertRowid),
                 amount,
                 category,
                 description,
@@ -78,19 +79,24 @@ router.post('/', authenticate, (req, res) => {
     }
 });
 
-router.put('/:id', authenticate, (req, res) => {
+router.put('/:id', authenticate, async (req, res) => {
     try {
         const { amount, category, description, date } = req.body;
         const db = getDatabase();
 
-        const existing = db.prepare('SELECT id FROM expenses WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
-        if (!existing) {
+        const existing = await db.execute({
+            sql: 'SELECT id FROM expenses WHERE id = ? AND user_id = ?',
+            args: [req.params.id, req.userId]
+        });
+
+        if (existing.rows.length === 0) {
             return res.status(404).json({ error: 'Expense not found' });
         }
 
-        db.prepare(
-            'UPDATE expenses SET amount = ?, category = ?, description = ?, date = ? WHERE id = ? AND user_id = ?'
-        ).run(amount, category, description, date, req.params.id, req.userId);
+        await db.execute({
+            sql: 'UPDATE expenses SET amount = ?, category = ?, description = ?, date = ? WHERE id = ? AND user_id = ?',
+            args: [amount, category, description, date, req.params.id, req.userId]
+        });
 
         res.json({
             message: 'Expense updated',
@@ -108,12 +114,15 @@ router.put('/:id', authenticate, (req, res) => {
     }
 });
 
-router.delete('/:id', authenticate, (req, res) => {
+router.delete('/:id', authenticate, async (req, res) => {
     try {
         const db = getDatabase();
-        const result = db.prepare('DELETE FROM expenses WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+        const result = await db.execute({
+            sql: 'DELETE FROM expenses WHERE id = ? AND user_id = ?',
+            args: [req.params.id, req.userId]
+        });
 
-        if (result.changes === 0) {
+        if (result.rowsAffected === 0) {
             return res.status(404).json({ error: 'Expense not found' });
         }
 
@@ -124,33 +133,37 @@ router.delete('/:id', authenticate, (req, res) => {
     }
 });
 
-router.get('/stats', authenticate, (req, res) => {
+router.get('/stats', authenticate, async (req, res) => {
     try {
         const db = getDatabase();
         const now = new Date();
         const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
-        const monthlyTotal = db.prepare(
-            'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ?'
-        ).get(req.userId, monthStart);
+        const monthlyResult = await db.execute({
+            sql: 'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ?',
+            args: [req.userId, monthStart]
+        });
 
-        const allTimeTotal = db.prepare(
-            'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ?'
-        ).get(req.userId);
+        const allTimeResult = await db.execute({
+            sql: 'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ?',
+            args: [req.userId]
+        });
 
-        const categoryTotals = db.prepare(
-            'SELECT category, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE user_id = ? GROUP BY category ORDER BY total DESC'
-        ).all(req.userId);
+        const categoryResult = await db.execute({
+            sql: 'SELECT category, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE user_id = ? GROUP BY category ORDER BY total DESC',
+            args: [req.userId]
+        });
 
-        const dailyTotals = db.prepare(
-            "SELECT date, SUM(amount) as total FROM expenses WHERE user_id = ? AND date >= date('now', '-30 days') GROUP BY date ORDER BY date ASC"
-        ).all(req.userId);
+        const dailyResult = await db.execute({
+            sql: "SELECT date, SUM(amount) as total FROM expenses WHERE user_id = ? AND date >= date('now', '-30 days') GROUP BY date ORDER BY date ASC",
+            args: [req.userId]
+        });
 
         res.json({
-            monthly_total: monthlyTotal.total,
-            all_time_total: allTimeTotal.total,
-            category_breakdown: categoryTotals,
-            daily_totals: dailyTotals
+            monthly_total: monthlyResult.rows[0] ? monthlyResult.rows[0].total : 0,
+            all_time_total: allTimeResult.rows[0] ? allTimeResult.rows[0].total : 0,
+            category_breakdown: categoryResult.rows,
+            daily_totals: dailyResult.rows
         });
     } catch (err) {
         console.error('Get stats error:', err);

@@ -5,7 +5,7 @@ const { generateToken, authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/signup', (req, res) => {
+router.post('/signup', async (req, res) => {
     try {
         const { name, email, password } = req.body;
 
@@ -23,21 +23,26 @@ router.post('/signup', (req, res) => {
         }
 
         const db = getDatabase();
-        const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-        if (existing) {
+        const existing = await db.execute({
+            sql: 'SELECT id FROM users WHERE email = ?',
+            args: [email]
+        });
+
+        if (existing.rows.length > 0) {
             return res.status(409).json({ error: 'Email already registered' });
         }
 
         const passwordHash = bcrypt.hashSync(password, 8);
-        const result = db.prepare(
-            'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)'
-        ).run(name, email, passwordHash);
+        const insertRes = await db.execute({
+            sql: 'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
+            args: [name, email, passwordHash]
+        });
 
-        const token = generateToken(result.lastInsertRowid, email);
+        const token = generateToken(Number(insertRes.lastInsertRowid), email);
 
         res.status(201).json({
             message: 'Account created successfully',
-            user: { id: result.lastInsertRowid, name, email },
+            user: { id: Number(insertRes.lastInsertRowid), name, email },
             token
         });
     } catch (err) {
@@ -46,7 +51,7 @@ router.post('/signup', (req, res) => {
     }
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
@@ -61,7 +66,12 @@ router.post('/login', (req, res) => {
         }
 
         const db = getDatabase();
-        const user = db.prepare('SELECT id, name, email, password_hash, balance, budget FROM users WHERE email = ?').get(email);
+        const result = await db.execute({
+            sql: 'SELECT id, name, email, password_hash, balance, budget FROM users WHERE email = ?',
+            args: [email]
+        });
+
+        const user = result.rows[0];
         if (!user) {
             return res.status(401).json({ error: 'Invalid email or password' });
         }
@@ -89,10 +99,14 @@ router.post('/login', (req, res) => {
     }
 });
 
-router.get('/me', authenticate, (req, res) => {
+router.get('/me', authenticate, async (req, res) => {
     try {
         const db = getDatabase();
-        const user = db.prepare('SELECT id, name, email, balance, budget, created_at FROM users WHERE id = ?').get(req.userId);
+        const result = await db.execute({
+            sql: 'SELECT id, name, email, balance, budget, created_at FROM users WHERE id = ?',
+            args: [req.userId]
+        });
+        const user = result.rows[0];
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -103,20 +117,29 @@ router.get('/me', authenticate, (req, res) => {
     }
 });
 
-router.put('/settings', authenticate, (req, res) => {
+router.put('/settings', authenticate, async (req, res) => {
     try {
         const { balance, budget } = req.body;
         const db = getDatabase();
 
         if (balance !== undefined) {
-            db.prepare('UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(balance, req.userId);
+            await db.execute({
+                sql: 'UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                args: [balance, req.userId]
+            });
         }
         if (budget !== undefined) {
-            db.prepare('UPDATE users SET budget = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(budget, req.userId);
+            await db.execute({
+                sql: 'UPDATE users SET budget = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                args: [budget, req.userId]
+            });
         }
 
-        const user = db.prepare('SELECT id, name, email, balance, budget FROM users WHERE id = ?').get(req.userId);
-        res.json({ message: 'Settings updated', user });
+        const result = await db.execute({
+            sql: 'SELECT id, name, email, balance, budget FROM users WHERE id = ?',
+            args: [req.userId]
+        });
+        res.json({ message: 'Settings updated', user: result.rows[0] });
     } catch (err) {
         console.error('Update settings error:', err);
         res.status(500).json({ error: 'Internal server error' });

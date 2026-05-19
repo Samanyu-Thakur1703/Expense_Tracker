@@ -24,6 +24,9 @@ playwright/.cache/
 Thumbs.db
 Desktop.ini
 
+# Vercel
+.vercel/
+
 # Logs
 *.log
 npm-debug.log*
