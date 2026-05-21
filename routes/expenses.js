@@ -7,14 +7,18 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
     try {
         const db = getDatabase();
-        const { category, search, start_date, end_date, limit = 100, offset = 0 } = req.query;
+        const { category, search, start_date, end_date, type = 'all', limit = 100, offset = 0 } = req.query;
 
-        let sql = 'SELECT id, amount, category, description, date, created_at FROM expenses WHERE user_id = ?';
+        let sql = 'SELECT id, amount, category, description, date, type, created_at FROM expenses WHERE user_id = ?';
         const args = [req.userId];
 
         if (category && category !== 'all') {
             sql += ' AND category = ?';
             args.push(category);
+        }
+        if (type && type !== 'all') {
+            sql += ' AND type = ?';
+            args.push(type);
         }
         if (search) {
             sql += ' AND (description LIKE ? OR category LIKE ?)';
@@ -42,7 +46,7 @@ router.get('/', authenticate, async (req, res) => {
 
 router.post('/', authenticate, async (req, res) => {
     try {
-        const { amount, category, description, date } = req.body;
+        const { amount, category, description, date, type } = req.body;
 
         if (!amount || amount <= 0) {
             return res.status(400).json({ error: 'Valid amount is required' });
@@ -57,10 +61,12 @@ router.post('/', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'Date is required' });
         }
 
+        const entryType = type === 'income' ? 'income' : 'expense';
+
         const db = getDatabase();
         const result = await db.execute({
-            sql: 'INSERT INTO expenses (user_id, amount, category, description, date) VALUES (?, ?, ?, ?, ?)',
-            args: [req.userId, amount, category, description, date]
+            sql: 'INSERT INTO expenses (user_id, amount, category, description, date, type) VALUES (?, ?, ?, ?, ?, ?)',
+            args: [req.userId, amount, category, description, date, entryType]
         });
 
         res.status(201).json({
@@ -70,7 +76,8 @@ router.post('/', authenticate, async (req, res) => {
                 amount,
                 category,
                 description,
-                date
+                date,
+                type: entryType
             }
         });
     } catch (err) {
@@ -81,7 +88,7 @@ router.post('/', authenticate, async (req, res) => {
 
 router.put('/:id', authenticate, async (req, res) => {
     try {
-        const { amount, category, description, date } = req.body;
+        const { amount, category, description, date, type } = req.body;
         const db = getDatabase();
 
         const existing = await db.execute({
@@ -93,9 +100,11 @@ router.put('/:id', authenticate, async (req, res) => {
             return res.status(404).json({ error: 'Expense not found' });
         }
 
+        const entryType = type === 'income' ? 'income' : 'expense';
+
         await db.execute({
-            sql: 'UPDATE expenses SET amount = ?, category = ?, description = ?, date = ? WHERE id = ? AND user_id = ?',
-            args: [amount, category, description, date, req.params.id, req.userId]
+            sql: 'UPDATE expenses SET amount = ?, category = ?, description = ?, date = ?, type = ? WHERE id = ? AND user_id = ?',
+            args: [amount, category, description, date, entryType, req.params.id, req.userId]
         });
 
         res.json({
@@ -105,7 +114,8 @@ router.put('/:id', authenticate, async (req, res) => {
                 amount,
                 category,
                 description,
-                date
+                date,
+                type: entryType
             }
         });
     } catch (err) {
@@ -139,13 +149,27 @@ router.get('/stats', authenticate, async (req, res) => {
         const now = new Date();
         const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
+        // Monthly expense total
         const monthlyResult = await db.execute({
-            sql: 'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ?',
+            sql: "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ? AND type = 'expense'",
             args: [req.userId, monthStart]
         });
 
+        // Monthly income total
+        const monthlyIncomeResult = await db.execute({
+            sql: "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ? AND type = 'income'",
+            args: [req.userId, monthStart]
+        });
+
+        // All-time expense total
         const allTimeResult = await db.execute({
-            sql: 'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ?',
+            sql: "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND type = 'expense'",
+            args: [req.userId]
+        });
+
+        // All-time income total
+        const allTimeIncomeResult = await db.execute({
+            sql: "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND type = 'income'",
             args: [req.userId]
         });
 
@@ -159,9 +183,18 @@ router.get('/stats', authenticate, async (req, res) => {
             args: [req.userId]
         });
 
+        const monthlyExpenses = monthlyResult.rows[0] ? monthlyResult.rows[0].total : 0;
+        const monthlyIncome = monthlyIncomeResult.rows[0] ? monthlyIncomeResult.rows[0].total : 0;
+        const allTimeExpenses = allTimeResult.rows[0] ? allTimeResult.rows[0].total : 0;
+        const allTimeIncome = allTimeIncomeResult.rows[0] ? allTimeIncomeResult.rows[0].total : 0;
+
         res.json({
-            monthly_total: monthlyResult.rows[0] ? monthlyResult.rows[0].total : 0,
-            all_time_total: allTimeResult.rows[0] ? allTimeResult.rows[0].total : 0,
+            monthly_total: monthlyExpenses,
+            all_time_total: allTimeExpenses,
+            income_total: monthlyIncome,
+            net_cashflow: monthlyIncome - monthlyExpenses,
+            income_all_time: allTimeIncome,
+            cashflow_all_time: allTimeIncome - allTimeExpenses,
             category_breakdown: categoryResult.rows,
             daily_totals: dailyResult.rows
         });
