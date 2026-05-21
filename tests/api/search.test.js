@@ -8,7 +8,7 @@ test.describe('Search API', () => {
     const res = await apiGet('/api/search', { token, params: { q: 'grocery' } });
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.results.expenses.length).toBeGreaterThanOrEqual(1);
+    expect(data.expenses.length).toBeGreaterThanOrEqual(1);
   });
 
   test('GET /api/search?q= returns empty', async () => {
@@ -16,8 +16,8 @@ test.describe('Search API', () => {
     const res = await apiGet('/api/search', { token, params: { q: '' } });
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.results.expenses).toEqual([]);
-    expect(data.results.investments).toEqual([]);
+    expect(data.expenses).toEqual([]);
+    expect(data.investments).toEqual([]);
   });
 
   test('search finds investments', async () => {
@@ -31,7 +31,7 @@ test.describe('Search API', () => {
     const res = await apiGet('/api/search', { token, params: { q: 'SEARCHTEST' } });
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.results.investments.length).toBeGreaterThanOrEqual(1);
+    expect(data.investments.length).toBeGreaterThanOrEqual(1);
   });
 
 });

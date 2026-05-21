@@ -10,7 +10,7 @@ router.get('/', authenticate, async (req, res) => {
         const { q } = req.query;
 
         if (!q || q.trim().length === 0) {
-            return res.json({ results: { expenses: [], investments: [] } });
+            return res.json({ expenses: [], investments: [] });
         }
 
         const db = getDatabase();
@@ -29,10 +29,8 @@ router.get('/', authenticate, async (req, res) => {
         });
 
         res.json({
-            results: {
-                expenses: expenses.rows,
-                investments: investments.rows
-            }
+            expenses: expenses.rows,
+            investments: investments.rows
         });
     } catch (err) {
         console.error('Search error:', err);
