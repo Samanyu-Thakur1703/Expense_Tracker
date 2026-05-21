@@ -136,7 +136,7 @@ async function initDatabase() {
 
         const userId = Number(insertResult.lastInsertRowid);
 
-        const sampleExpenses = [
+        const seedData = [
             { amount: 450, category: 'Food', description: 'Grocery shopping', date: '2026-05-12', type: 'expense' },
             { amount: 1200, category: 'Bills', description: 'Electricity bill', date: '2026-05-13', type: 'expense' },
             { amount: 800, category: 'Travel', description: 'Metro pass', date: '2026-05-14', type: 'expense' },
@@ -144,16 +144,21 @@ async function initDatabase() {
             { amount: 350, category: 'Food', description: 'Restaurant dinner', date: '2026-05-16', type: 'expense' },
             { amount: 500, category: 'Health', description: 'Pharmacy', date: '2026-05-17', type: 'expense' },
             { amount: 1500, category: 'Entertainment', description: 'Movie tickets + snacks', date: '2026-05-17', type: 'expense' },
+            // Income entries
+            { amount: 45000, category: 'Salary', description: 'Monthly salary', date: '2026-05-01', type: 'income' },
+            { amount: 5000, category: 'Freelance', description: 'Website project payment', date: '2026-05-10', type: 'income' },
+            { amount: 1200, category: 'Interest', description: 'Savings account interest', date: '2026-05-15', type: 'income' },
+            { amount: 2500, category: 'Freelance', description: 'Consulting call', date: '2026-05-20', type: 'income' },
         ];
 
-        for (const exp of sampleExpenses) {
+        for (const exp of seedData) {
             await database.execute({
                 sql: 'INSERT INTO expenses (user_id, amount, category, description, date, type) VALUES (?, ?, ?, ?, ?, ?)',
                 args: [userId, exp.amount, exp.category, exp.description, exp.date, exp.type]
             });
         }
 
-        console.log('Demo user seeded with', sampleExpenses.length, 'sample expenses');
+        console.log('Demo user seeded with', seedData.length, 'entries (7 expense + 4 income)');
     }
 }
 
