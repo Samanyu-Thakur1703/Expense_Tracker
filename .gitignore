@@ -37,4 +37,9 @@ npm-debug.log*
 *.swo
 *.swp
 
-.vercel
+# AI / planning artifacts
+.sisyphus/
+
+# Design previews (gitignored; ui-overhaul-dashboard.png kept for README)
+stitch-preview.png
+public/stitch-preview.html
