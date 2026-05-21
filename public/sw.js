@@ -1,19 +1,7 @@
-// FinTrack AI Service Worker v1
-const CACHE = 'fintrack-v1';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/script.js',
-  '/manifest.json'
-];
+// FinTrack AI Service Worker v2
+const CACHE = 'fintrack-v2';
 
-self.addEventListener('install', function(e) {
-  e.waitUntil(
-    caches.open(CACHE).then(function(cache) {
-      return cache.addAll(ASSETS);
-    })
-  );
+self.addEventListener('install', function() {
   self.skipWaiting();
 });
 
@@ -23,30 +11,32 @@ self.addEventListener('activate', function(e) {
       return Promise.all(
         keys.filter(function(k) { return k !== CACHE; }).map(function(k) { return caches.delete(k); })
       );
+    }).then(function() {
+      return self.clients.claim();
     })
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', function(e) {
-  // API calls - network first, fallback to cache
+  // API calls - network only (no caching)
   if (e.request.url.indexOf('/api/') !== -1) {
-    e.respondWith(
-      fetch(e.request).catch(function() {
-        return caches.match(e.request);
-      })
-    );
     return;
   }
-  // Static assets - cache first
+  // Static assets - stale-while-revalidate
   e.respondWith(
     caches.match(e.request).then(function(cached) {
-      return cached || fetch(e.request).then(function(response) {
-        return caches.open(CACHE).then(function(cache) {
-          if (e.request.method === 'GET') cache.put(e.request, response.clone());
-          return response;
-        });
+      var fetchPromise = fetch(e.request).then(function(response) {
+        if (response && response.status === 200) {
+          return caches.open(CACHE).then(function(cache) {
+            cache.put(e.request, response.clone());
+            return response;
+          });
+        }
+        return response;
+      }).catch(function() {
+        return cached;
       });
+      return cached || fetchPromise;
     })
   );
 });

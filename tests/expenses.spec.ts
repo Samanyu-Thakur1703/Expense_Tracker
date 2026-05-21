@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 
 test('Expenses CRUD basics', async ({ page }) => {
-  await page.goto('file:///E:/ex_tracker/index.html');
+  await page.goto('http://localhost:3001');
 
   // Login first
-  await page.fill('#login-email', 'test@example.com');
-  await page.fill('#login-password', 'test123');
+  await page.fill('#login-email', 'demo@fintrack.com');
+  await page.fill('#login-password', 'demo1234');
   await page.click('button:text("Sign In")');
 
   // Handle setup modal if it appears (first login)
@@ -13,7 +13,7 @@ test('Expenses CRUD basics', async ({ page }) => {
   if (await setupModal.isVisible({ timeout: 3000 }).catch(() => false)) {
     await page.fill('#set-balance', '10000');
     await page.fill('#set-budget', '5000');
-    await page.click('button:text("Start")');
+    await page.click('button:text("Save")');
     // Wait for setup modal to close
     await setupModal.waitFor({ state: 'hidden', timeout: 5000 });
   }
@@ -25,9 +25,8 @@ test('Expenses CRUD basics', async ({ page }) => {
   await page.click('a[href="#expenses"]');
   await page.waitForTimeout(500);
 
-  // Open Add Expense modal
-  const addBtn = page.locator('text=Add Expense');
-  await addBtn.first().click();
+  // Open Add Transaction modal
+  await page.click('#add-expense-main');
   await page.waitForSelector('#expense-modal:not(.hidden)');
 
   // Fill expense form
@@ -35,10 +34,9 @@ test('Expenses CRUD basics', async ({ page }) => {
   await page.selectOption('#exp-category', 'Food');
   await page.fill('#exp-desc', 'Playwright test expense');
   const today = new Date().toISOString().split('T')[0];
-  await page.fill('#exp-date', today);
 
   // Save expense
-  await page.click('text=Save Expense');
+  await page.locator('#expense-form button[type="submit"]').click();
   await page.waitForTimeout(500);
 
   // Search for the newly added item

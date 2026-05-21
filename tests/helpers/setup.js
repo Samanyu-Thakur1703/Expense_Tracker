@@ -6,11 +6,14 @@
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3001';
 
+let cachedToken = null;
+
 /**
  * Authenticate as the demo user and return a JWT token.
- * Creates the user if needed via the demo seed.
+ * Caches the token to avoid hitting auth rate limits.
  */
 async function getDemoToken() {
+  if (cachedToken) return cachedToken;
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -21,7 +24,8 @@ async function getDemoToken() {
     throw new Error(`Login failed (${res.status}): ${text}`);
   }
   const data = await res.json();
-  return data.token;
+  cachedToken = data.token;
+  return cachedToken;
 }
 
 /**

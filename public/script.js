@@ -90,6 +90,53 @@ const API = {
 
     getExpenseStats: function() {
         return this.request('GET', '/api/expenses/stats');
+    },
+
+    // Investments
+    getInvestments: function() {
+        return this.request('GET', '/api/investments');
+    },
+
+    getInvestmentPortfolio: function() {
+        return this.request('GET', '/api/investments/portfolio');
+    },
+
+    createInvestment: function(data) {
+        return this.request('POST', '/api/investments', data);
+    },
+
+    updateInvestment: function(id, data) {
+        return this.request('PUT', '/api/investments/' + id, data);
+    },
+
+    deleteInvestment: function(id) {
+        return this.request('DELETE', '/api/investments/' + id);
+    },
+
+    // Budgets
+    getBudgets: function() {
+        return this.request('GET', '/api/budgets');
+    },
+
+    setBudget: function(category, monthly_limit) {
+        return this.request('POST', '/api/budgets', { category: category, monthly_limit: monthly_limit });
+    },
+
+    deleteBudget: function(category) {
+        return this.request('DELETE', '/api/budgets/' + encodeURIComponent(category));
+    },
+
+    // Search
+    search: function(query) {
+        return this.request('GET', '/api/search?q=' + encodeURIComponent(query));
+    },
+
+    // CSV Export
+    getExportUrl: function(params) {
+        var qs = Object.keys(params || {}).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        return this.BASE_URL + '/api/expenses/export' + (qs ? '?' + qs : '');
     }
 };
 
@@ -608,13 +655,11 @@ const App = {
             document.getElementById('avatar-img').src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + encodeURIComponent(AppState.user.name);
         }
 
-        if (!localStorage.getItem(CONFIG.STORAGE_KEYS.SETUP_COMPLETE)) {
-            Modal.open('setup-modal');
-        }
-
         this.setupAppEventListeners();
         this.refreshData();
         InvestmentModule.startStockUpdates();
+        // Fetch AI-powered insights in background
+        setTimeout(function() { App.refreshAIInsights(); }, 1000);
     },
 
     refreshData: function() {
@@ -632,6 +677,7 @@ const App = {
                 var f = JSON.parse(savedFilter);
                 if (f.category && f.category !== 'all') params.category = f.category;
                 if (f.search) params.search = f.search;
+                if (f.type && f.type !== 'all') params.type = f.type;
             } catch(e) {}
         }
         var expensesPromise = API.getExpenses(params);
@@ -676,8 +722,16 @@ const App = {
         AppState.expenseOffset = offset;
         sessionStorage.setItem(CONFIG.STORAGE_KEYS.EXPENSE_OFFSET, offset);
 
+        var params = { limit: CONFIG.PAGE_SIZE, offset: offset };
+        var savedFilter = sessionStorage.getItem(CONFIG.STORAGE_KEYS.FILTER_STATE);
+        if (savedFilter) {
+            try {
+                var f = JSON.parse(savedFilter);
+                if (f.type && f.type !== 'all') params.type = f.type;
+            } catch(e) {}
+        }
         LoadingState.showTable();
-        API.getExpenses({ limit: CONFIG.PAGE_SIZE, offset: offset }).then(function(data) {
+        API.getExpenses(params).then(function(data) {
             var newExpenses = data.expenses.map(function(e) {
                 e.desc = e.description;
                 return e;
@@ -719,6 +773,19 @@ const App = {
             }
         });
 
+        const financialSetupBtn = document.getElementById('financial-setup-btn');
+        if (financialSetupBtn) {
+            financialSetupBtn.addEventListener('click', function() {
+                // Pre-fill with current values
+                var balField = document.getElementById('set-balance');
+                var budField = document.getElementById('set-budget');
+                if (balField) balField.value = AppState.balance || '';
+                if (budField) budField.value = AppState.budget || '';
+                Utils.clearAllErrors('setup-form');
+                Modal.open('setup-modal');
+            });
+        }
+
         const addExpenseQuick = document.getElementById('add-expense-quick');
         if (addExpenseQuick) {
             addExpenseQuick.addEventListener('click', function() { ExpenseModule.openAddModal(); });
@@ -734,18 +801,52 @@ const App = {
             expenseForm.addEventListener('submit', function(e) { ExpenseModule.handleSubmit(e); });
         }
 
-        // Filter persistence
-        var filterCat = document.getElementById('filter-category');
-        var expenseSearch = document.getElementById('expense-search');
-        if (filterCat) {
-            filterCat.addEventListener('change', function() { ExpenseModule.saveFilterState(); ExpenseModule.renderTable(); });
+        // Type toggle buttons
+        document.querySelectorAll('#exp-type-toggle .type-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                ExpenseModule.setType(this.getAttribute('data-type'));
+                var isIncome = this.getAttribute('data-type') === 'income';
+                document.getElementById('modal-title').textContent = isIncome ? 'Add Income' : 'Add Transaction';
+                var saveBtn = document.querySelector('#expense-form .btn-primary');
+                if (saveBtn) saveBtn.textContent = isIncome ? 'Save Income' : 'Save Expense';
+            });
+        });
+
+        // Budget button
+        var budgetBtn = document.getElementById('budget-btn');
+        if (budgetBtn) {
+            budgetBtn.addEventListener('click', function() { BudgetModule.openModal(); });
         }
-        if (expenseSearch) {
-            expenseSearch.addEventListener('input', Utils.debounce(function() {
-                ExpenseModule.saveFilterState();
-                ExpenseModule.renderTable();
-            }, CONFIG.DEBOUNCE_DELAY));
-        }
+
+                // Budget modal buttons
+                var budgetSaveBtn = document.getElementById('budget-save-btn');
+                if (budgetSaveBtn) {
+                    budgetSaveBtn.addEventListener('click', function() { BudgetModule.save(); });
+                }
+                var budgetDeleteBtn = document.getElementById('budget-delete-btn');
+                if (budgetDeleteBtn) {
+                    budgetDeleteBtn.addEventListener('click', function() { BudgetModule.delete(); });
+                }
+                // Enter key in budget limit field
+                var budgetLimit = document.getElementById('budget-limit');
+                if (budgetLimit) {
+                    budgetLimit.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') { e.preventDefault(); BudgetModule.save(); }
+                    });
+                }
+
+                // Filter persistence
+                var filterCat = document.getElementById('filter-category');
+                var expenseSearch = document.getElementById('expense-search');
+                if (filterCat) {
+                    filterCat.addEventListener('change', function() { ExpenseModule.saveFilterState(); ExpenseModule.renderTable(); });
+                }
+                if (expenseSearch) {
+                    expenseSearch.addEventListener('input', Utils.debounce(function() {
+                        ExpenseModule.saveFilterState();
+                        ExpenseModule.renderTable();
+                    }, CONFIG.DEBOUNCE_DELAY));
+                }
 
         const setupForm = document.getElementById('setup-form');
         if (setupForm) {
@@ -760,6 +861,11 @@ const App = {
         const filterCategory = document.getElementById('filter-category');
         if (filterCategory) {
             filterCategory.addEventListener('change', function() { ExpenseModule.renderTable(); });
+        }
+
+        const filterType = document.getElementById('filter-type');
+        if (filterType) {
+            filterType.addEventListener('change', function() { ExpenseModule.saveFilterState(); ExpenseModule.renderTable(); });
         }
 
         const globalSearch = document.getElementById('global-search');
@@ -975,9 +1081,20 @@ const ExpenseModule = {
             return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
         });
 
-        // Calculate top category by amount
+        const monthlyExpenses = monthly.filter(function(e) { return (e.type || 'expense') === 'expense'; });
+        const monthlyIncome = monthly.filter(function(e) { return (e.type || 'expense') === 'income'; });
+
+        const allExpenses = AppState.expenses.filter(function(e) { return (e.type || 'expense') === 'expense'; });
+        const allIncome = AppState.expenses.filter(function(e) { return (e.type || 'expense') === 'income'; });
+
+        const totalMonthlyExpenses = monthlyExpenses.reduce(function(s, e) { return s + e.amount; }, 0);
+        const totalMonthlyIncome = monthlyIncome.reduce(function(s, e) { return s + e.amount; }, 0);
+        const totalAllTimeExpenses = allExpenses.reduce(function(s, e) { return s + e.amount; }, 0);
+        const totalAllTimeIncome = allIncome.reduce(function(s, e) { return s + e.amount; }, 0);
+
+        // Calculate top category by amount (expenses only)
         const categoryTotals = {};
-        AppState.expenses.forEach(function(e) {
+        allExpenses.forEach(function(e) {
             categoryTotals[e.category] = (categoryTotals[e.category] || 0) + e.amount;
         });
 
@@ -991,19 +1108,34 @@ const ExpenseModule = {
         });
 
         return {
-            totalMonthly: monthly.reduce(function(s, e) { return s + e.amount; },0),
-            totalAllTime: AppState.expenses.reduce(function(s, e) { return s + e.amount; },0),
+            totalMonthly: totalMonthlyExpenses,
+            totalMonthlyIncome: totalMonthlyIncome,
+            totalAllTime: totalAllTimeExpenses,
+            totalAllTimeIncome: totalAllTimeIncome,
+            netCashflow: totalMonthlyIncome - totalMonthlyExpenses,
             topCategory: topCategory,
             topCategoryAmount: topAmount
         };
     },
 
+    setType: function(type) {
+        document.querySelectorAll('#exp-type-toggle .type-btn').forEach(function(btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-type') === type);
+        });
+    },
+
+    currentType: function() {
+        var active = document.querySelector('#exp-type-toggle .type-btn.active');
+        return active ? active.getAttribute('data-type') : 'expense';
+    },
+
     openAddModal: function() {
-        document.getElementById('modal-title').textContent = 'Add New Expense';
+        document.getElementById('modal-title').textContent = 'Add New Transaction';
         document.getElementById('expense-form').reset();
         document.getElementById('edit-expense-id').value = '';
         document.getElementById('exp-date').value = new Date().toISOString().split('T')[0];
         Utils.clearAllErrors('expense-form');
+        this.setType('expense');
         Modal.open('expense-modal');
     },
 
@@ -1011,12 +1143,13 @@ const ExpenseModule = {
         const expense = AppState.expenses.find(function(e) { return e.id == id; });
         if (!expense) return;
 
-        document.getElementById('modal-title').textContent = 'Edit Expense';
+        document.getElementById('modal-title').textContent = expense.type === 'income' ? 'Edit Income' : 'Edit Expense';
         document.getElementById('edit-expense-id').value = expense.id;
         document.getElementById('exp-amount').value = expense.amount;
         document.getElementById('exp-category').value = expense.category;
         document.getElementById('exp-desc').value = expense.description || expense.desc || '';
         document.getElementById('exp-date').value = expense.date;
+        this.setType(expense.type || 'expense');
         Utils.clearAllErrors('expense-form');
         Modal.open('expense-modal');
     },
@@ -1030,6 +1163,7 @@ const ExpenseModule = {
         const category = document.getElementById('exp-category').value;
         const desc = document.getElementById('exp-desc').value.trim();
         const date = document.getElementById('exp-date').value;
+        const type = this.currentType();
 
         let isValid = true;
 
@@ -1055,7 +1189,7 @@ const ExpenseModule = {
 
         if (!isValid) return;
 
-        const data = { amount: amount, category: category, description: desc, date: date };
+        const data = { amount: amount, category: category, description: desc, date: date, type: type };
 
         var self = this;
         var promise;
@@ -1099,29 +1233,31 @@ const ExpenseModule = {
     renderTable: function(expenses) {
         const cat = (document.getElementById('filter-category') || {}).value || 'all';
         const search = ((document.getElementById('expense-search') || {}).value || '').toLowerCase();
+        const typeFilter = (document.getElementById('filter-type') || {}).value || 'all';
 
         const filtered = (expenses || AppState.expenses).filter(function(e) {
             const matchCat = cat === 'all' || e.category === cat;
+            const matchType = typeFilter === 'all' || (e.type || 'expense') === typeFilter;
             const desc = e.description || e.desc || '';
             const matchSearch = desc.toLowerCase().indexOf(search) !== -1 || e.category.toLowerCase().indexOf(search) !== -1;
-            return matchCat && matchSearch;
+            return matchCat && matchType && matchSearch;
         });
 
         const tbody = document.getElementById('expenses-tbody');
         if (!tbody) return;
 
         if (filtered.length === 0) {
-            const hasFilters = cat !== 'all' || search.length > 0;
+            const hasFilters = cat !== 'all' || search.length > 0 || typeFilter !== 'all';
             if (hasFilters) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:4rem; color:var(--text-muted)">' +
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:4rem; color:var(--text-muted)">' +
                     '<div style="font-size:1.1rem; font-weight:700; margin-bottom:0.5rem">No results found</div>' +
                     '<div style="font-size:0.9rem">Try adjusting your filters or search query</div>' +
                 '</td></tr>';
             } else {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:4rem; color:var(--text-muted)">' +
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:4rem; color:var(--text-muted)">' +
                     '<div style="font-size:2rem; margin-bottom:0.75rem"><i data-lucide="receipt" width="48" height="48" style="opacity:0.3"></i></div>' +
-                    '<div style="font-size:1.1rem; font-weight:700; margin-bottom:0.5rem">No expenses yet</div>' +
-                    '<div style="font-size:0.9rem; margin-bottom:1rem">Click <strong>Add Expense</strong> to get started on your financial journey</div>' +
+                    '<div style="font-size:1.1rem; font-weight:700; margin-bottom:0.5rem">No transactions yet</div>' +
+                    '<div style="font-size:0.9rem; margin-bottom:1rem">Click <strong>Add</strong> to get started on your financial journey</div>' +
                 '</td></tr>';
             }
             if (window.lucide) lucide.createIcons();
@@ -1132,11 +1268,16 @@ const ExpenseModule = {
         filtered.forEach(function(e) {
             const desc = Utils.escapeHTML(e.description || e.desc || '');
             const catColor = CONFIG.CATEGORY_COLORS[e.category] || '#6B7280';
-            html += '<tr>' +
+            const isIncome = (e.type || 'expense') === 'income';
+            const rowClass = isIncome ? 'income-row' : '';
+            const amountClass = isIncome ? 'income-amount' : 'expense-amount';
+            const sign = isIncome ? '+' : '-';
+            html += '<tr class="' + rowClass + '">' +
                 '<td>' + Utils.formatDate(e.date) + '</td>' +
                 '<td>' + desc + '</td>' +
                 '<td><span class="badge" style="background:' + catColor + '20; color:' + catColor + '; border:1px solid ' + catColor + '40">' + Utils.escapeHTML(e.category) + '</span></td>' +
-                '<td class="negative">-' + Utils.formatCurrency(e.amount) + '</td>' +
+                '<td><span class="type-badge ' + (isIncome ? 'income' : 'expense') + '"><i data-lucide="' + (isIncome ? 'trending-up' : 'shopping-bag') + '"></i>' + (isIncome ? 'Income' : 'Expense') + '</span></td>' +
+                '<td class="' + amountClass + '">' + sign + Utils.formatCurrency(e.amount) + '</td>' +
                 '<td>' +
                     '<button onclick="ExpenseModule.openEditModal(\'' + e.id + '\')" class="icon-btn-small" style="color:var(--gold-primary); margin-right:0.5rem"><i data-lucide="edit"></i></button>' +
                     '<button onclick="ExpenseModule.deleteExpense(\'' + e.id + '\')" class="icon-btn-small" style="color:var(--negative)"><i data-lucide="trash-2"></i></button>' +
@@ -1171,7 +1312,8 @@ const ExpenseModule = {
     saveFilterState: function() {
         var cat = (document.getElementById('filter-category') || {}).value || 'all';
         var search = (document.getElementById('expense-search') || {}).value || '';
-        sessionStorage.setItem(CONFIG.STORAGE_KEYS.FILTER_STATE, JSON.stringify({ category: cat, search: search }));
+        var typeFilter = (document.getElementById('filter-type') || {}).value || 'all';
+        sessionStorage.setItem(CONFIG.STORAGE_KEYS.FILTER_STATE, JSON.stringify({ category: cat, search: search, type: typeFilter }));
     },
     restoreFilterState: function() {
         var saved = sessionStorage.getItem(CONFIG.STORAGE_KEYS.FILTER_STATE);
@@ -1180,76 +1322,59 @@ const ExpenseModule = {
             var f = JSON.parse(saved);
             var catEl = document.getElementById('filter-category');
             var searchEl = document.getElementById('expense-search');
+            var typeEl = document.getElementById('filter-type');
             if (catEl && f.category) catEl.value = f.category;
             if (searchEl && f.search) searchEl.value = f.search;
+            if (typeEl && f.type) typeEl.value = f.type;
         } catch(e) {}
     },
 
     exportCSV: function() {
-        const BOM = '\uFEFF';
-        let csv = BOM;
+        var token = API.getToken();
+        if (!token) {
+            Toast.show('Please login first', 'error');
+            return;
+        }
 
-        // Section 1: Financial Summary
-        csv += '=== FINANCIAL SUMMARY ===\n';
-        csv += 'Current Balance,Total Budget,Total Expenses,Monthly Expenses\n';
-        const stats = this.calculateStats();
-        csv += Utils.formatCurrency(AppState.balance) + ',' +
-                Utils.formatCurrency(AppState.budget) + ',' +
-                Utils.formatCurrency(stats.totalAllTime) + ',' +
-                Utils.formatCurrency(stats.totalMonthly) + '\n\n';
-
-        // Section 2: Expense Transactions
-        csv += '=== EXPENSE TRANSACTIONS ===\n';
-        csv += 'Date,Description,Category,Amount (₹)\n';
-        AppState.expenses.forEach(function(e) {
-            csv += '"' + e.date + '","' +
-                    e.desc.replace(/"/g, '""') + '","' +
-                    e.category + '",' +
-                    e.amount + '\n';
+        var url = API.getExportUrl({});
+        
+        // Fetch CSV from backend and trigger download
+        fetch(url, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        }).then(function(res) {
+            if (!res.ok) throw new Error('Export failed');
+            return res.text();
+        }).then(function(csv) {
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const dlUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = dlUrl;
+            a.download = 'fintrack_export_' + new Date().toISOString().split('T')[0] + '.csv';
+            a.click();
+            URL.revokeObjectURL(dlUrl);
+            Toast.show('CSV exported successfully', 'success');
+        }).catch(function(err) {
+            Toast.show('Export failed: ' + err.message + '. Falling back to local export.', 'error');
+            // Fallback: local CSV generation
+            var BOM = '\uFEFF';
+            var csv = BOM;
+            csv += 'Date,Description,Category,Type,Amount\n';
+            AppState.expenses.forEach(function(e) {
+                csv += '"' + e.date + '","' +
+                        (e.description || e.desc || '').replace(/"/g, '""') + '","' +
+                        e.category + '","' +
+                        (e.type || 'expense') + '",' +
+                        e.amount + '\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const dlUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = dlUrl;
+            a.download = 'fintrack_export_' + new Date().toISOString().split('T')[0] + '.csv';
+            a.click();
+            URL.revokeObjectURL(dlUrl);
+            Toast.show('Local CSV exported with ' + AppState.expenses.length + ' transactions', 'success');
         });
-
-        // Section 3: Investment Portfolio
-        csv += '\n=== INVESTMENT PORTFOLIO ===\n';
-        csv += 'Symbol,Name,Price (₹),Change (%),Status\n';
-        InvestmentModule.stocks.forEach(function(s) {
-            csv += '"' + s.symbol + '","' +
-                    s.name + '",' +
-                    s.price.toFixed(2) + ',' +
-                    s.change + ',' +
-                    (s.isPositive ? 'Up' : 'Down') + '\n';
-        });
-
-        // Section 4: IPO Watchlist
-        csv += '\n=== IPO WATCHLIST ===\n';
-        csv += 'Company,Price Range,Status,Date\n';
-        InvestmentModule.ipos.forEach(function(ipo) {
-            csv += '"' + ipo.company + '","' +
-                    ipo.price + '","' +
-                    ipo.status + '","' +
-                    ipo.date + '"\n';
-        });
-
-        // Section 5: AI Insights
-        csv += '\n=== AI INSIGHTS ===\n';
-        csv += 'Title,Description,Type\n';
-        const insights = InsightsModule.generate();
-        insights.forEach(function(i) {
-            csv += '"' + i.title + '","' +
-                    i.desc.replace(/"/g, '""') + '","' +
-                    i.type + '"\n';
-        });
-
-        csv += '\nExported on: ' + new Date().toLocaleString('en-IN') + '\n';
-
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'fintrack_full_export_' + new Date().toISOString().split('T')[0] + '.csv';
-        a.click();
-        URL.revokeObjectURL(url);
-
-        Toast.show('Full financial report exported with ' + AppState.expenses.length + ' transactions', 'success');
     }
 };
 
@@ -1283,40 +1408,80 @@ const InvestmentModule = {
     },
 
     fetchStockPrices: function() {
-        const config = AppState.apiConfig;
-
-        if (!config.key) {
-            this.updateWithMockData();
-            return;
-        }
-
+        const self = this;
         const loadingEl = document.getElementById('stock-loading');
         if (loadingEl) loadingEl.classList.remove('hidden');
 
+        // Try the backend API first
+        var symbols = this.stocks.map(function(s) { return s.symbol.replace('.BSE', '.NS'); }).join(',');
+
+        var apiPromise = fetch('/api/stocks/quotes?symbols=' + encodeURIComponent(symbols))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.stocks && data.stocks.length > 0) {
+                    data.stocks.forEach(function(apiStock) {
+                        var local = self.stocks.find(function(s) {
+                            return s.symbol.replace('.BSE', '.NS') === apiStock.symbol ||
+                                   s.symbol === apiStock.symbol;
+                        });
+                        if (local) {
+                            local.price = apiStock.price || local.price;
+                            local.change = apiStock.changePercent || 0;
+                            local.isPositive = (apiStock.changePercent || 0) >= 0;
+                            local.name = apiStock.name || local.name;
+                        }
+                    });
+                    self.renderWatchlist();
+                }
+                // Also update market ticker
+                return fetch('/api/stocks/market').then(function(r) { return r.json(); });
+            })
+            .then(function(marketData) {
+                if (marketData && marketData.market) {
+                    self._updateMarketFromAPI(marketData.market);
+                } else {
+                    self.updateMarketTicker();
+                }
+            })
+            .catch(function() {
+                // Fallback to existing behavior
+                if (AppState.apiConfig && AppState.apiConfig.key) {
+                    return self._fetchFromExternalAPI();
+                }
+                self.updateWithMockData();
+            })
+            .finally(function() {
+                if (loadingEl) loadingEl.classList.add('hidden');
+            });
+    },
+
+    _fetchFromExternalAPI: function() {
+        const config = AppState.apiConfig;
+        if (!config || !config.key) {
+            this.updateWithMockData();
+            return;
+        }
         const self = this;
         const promises = this.stocks.map(function(stock) {
-            return self.fetchSingleStock(stock.symbol, config).then(function(price) {
+            return self._fetchSingleStockExternal(stock.symbol, config).then(function(price) {
                 if (price !== null) {
                     const oldPrice = stock.price;
                     stock.price = price;
                     stock.change = ((price - oldPrice) / oldPrice * 100).toFixed(2);
-                    stock.isPositive = stock.change >= 0;
+                    stock.isPositive = parseFloat(stock.change) >= 0;
                 }
             });
         });
-
         Promise.all(promises).then(function() {
             self.renderWatchlist();
             self.updateMarketTicker();
-        }).catch(function(error) {
-            console.error('Failed to fetch stock prices:', error);
+        }).catch(function() {
             self.updateWithMockData();
-        }).finally(function() {
-            if (loadingEl) loadingEl.classList.add('hidden');
         });
     },
 
-    fetchSingleStock: function(symbol, config) {
+    _fetchSingleStockExternal: function(symbol, config) {
+        // Preserved original external API logic
         return new Promise(function(resolve) {
             let url;
             switch (config.provider) {
@@ -1331,14 +1496,12 @@ const InvestmentModule = {
                     resolve(null);
                     return;
             }
-
             fetch(url).then(function(res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.json();
             }).then(function(data) {
                 if (config.provider === 'alpha_vantage') {
                     if (data['Error Message'] || data['Note']) {
-                        console.warn('API Limit or Error:', data);
                         resolve(null);
                         return;
                     }
@@ -1357,8 +1520,7 @@ const InvestmentModule = {
                 } else {
                     resolve(null);
                 }
-            }).catch(function(error) {
-                console.error('Failed to fetch ' + symbol + ':', error);
+            }).catch(function() {
                 resolve(null);
             });
         });
@@ -1374,6 +1536,31 @@ const InvestmentModule = {
 
         this.renderWatchlist();
         this.updateMarketTicker();
+    },
+
+    _updateMarketFromAPI: function(market) {
+        if (market.nifty) {
+            var nifty = document.getElementById('nifty-50');
+            if (nifty) {
+                nifty.querySelector('.ticker-price').textContent = market.nifty.price.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+                var changeEl = nifty.querySelector('.ticker-change');
+                if (changeEl) {
+                    changeEl.textContent = (market.nifty.changePercent >= 0 ? '+' : '') + market.nifty.changePercent.toFixed(2) + '%';
+                    changeEl.className = 'ticker-change ' + (market.nifty.changePercent >= 0 ? 'positive' : 'negative');
+                }
+            }
+        }
+        if (market.sensex) {
+            var sensex = document.getElementById('sensex');
+            if (sensex) {
+                sensex.querySelector('.ticker-price').textContent = market.sensex.price.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+                var changeEl = sensex.querySelector('.ticker-change');
+                if (changeEl) {
+                    changeEl.textContent = (market.sensex.changePercent >= 0 ? '+' : '') + market.sensex.changePercent.toFixed(2) + '%';
+                    changeEl.className = 'ticker-change ' + (market.sensex.changePercent >= 0 ? 'positive' : 'negative');
+                }
+            }
+        }
     },
 
     updateMarketTicker: function() {
@@ -1398,7 +1585,7 @@ const InvestmentModule = {
         this.stocks.forEach(function(s) {
             html += '<div class="stock-item">' +
                 '<div class="stock-info">' +
-                    '<span style="font-weight:800; display:block;">' + s.symbol.replace('.BSE', '') + '</span>' +
+                    '<span style="font-weight:800; display:block;">' + s.symbol.replace('.BSE', '').replace('.NS', '') + '</span>' +
                     '<span style="font-size:0.8rem; color:var(--text-muted)">' + Utils.escapeHTML(s.name) + '</span>' +
                 '</div>' +
                 '<div style="text-align:right">' +
@@ -1436,14 +1623,19 @@ const InvestmentModule = {
     },
 
     renderPortfolioSummary: function() {
-        const portfolioValue = 1245000 + (Math.random() - 0.5) * 5000;
-        const investedAmount = 1000000;
-
         const portfolioEl = document.getElementById('portfolio-value');
         const investedEl = document.getElementById('invested-amount');
 
-        if (portfolioEl) portfolioEl.textContent = Utils.formatCurrency(portfolioValue);
-        if (investedEl) investedEl.textContent = Utils.formatCurrency(investedAmount);
+        var self = this;
+        API.getInvestmentPortfolio().then(function(data) {
+            if (portfolioEl) portfolioEl.textContent = Utils.formatCurrency(data.current_value || 0);
+            if (investedEl) investedEl.textContent = Utils.formatCurrency(data.total_invested || 0);
+        }).catch(function() {
+            // Fallback
+            var fallbackVal = 1245000;
+            if (portfolioEl) portfolioEl.textContent = Utils.formatCurrency(fallbackVal);
+            if (investedEl) investedEl.textContent = Utils.formatCurrency(1000000);
+        });
     },
 
     render: function() {
@@ -1493,39 +1685,47 @@ const ChartModule = {
                 return;
             }
 
-            const dailyTotals = {};
+            const dailyExpenses = {};
+            const dailyIncome = {};
             AppState.expenses.forEach(function(exp) {
-                if (!dailyTotals[exp.date]) dailyTotals[exp.date] = 0;
-                dailyTotals[exp.date] += exp.amount;
+                var date = exp.date;
+                if ((exp.type || 'expense') === 'expense') {
+                    if (!dailyExpenses[date]) dailyExpenses[date] = 0;
+                    dailyExpenses[date] += exp.amount;
+                } else {
+                    if (!dailyIncome[date]) dailyIncome[date] = 0;
+                    dailyIncome[date] += exp.amount;
+                }
             });
 
-            const sortedDates = Object.keys(dailyTotals).sort(function(a, b) { return new Date(a) - new Date(b); });
+            const allDates = Object.keys({});
+            AppState.expenses.forEach(function(exp) { allDates[exp.date] = true; });
+            const dateSet = {};
+            AppState.expenses.forEach(function(exp) { dateSet[exp.date] = true; });
+            const sortedDates = Object.keys(dateSet).sort(function(a, b) { return new Date(a) - new Date(b); });
             const fixedLength = 7;
 
-            const chartData = sortedDates.slice(-fixedLength).map(function(date) {
-                return {
-                    date: date,
-                    label: new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-                    amount: dailyTotals[date]
-                };
-            });
-
-            while (chartData.length < fixedLength) {
-                chartData.unshift({ date: '', label: '-', amount: 0 });
+            const chartDates = sortedDates.slice(-fixedLength);
+            while (chartDates.length < fixedLength) {
+                chartDates.unshift('');
             }
 
-            const labels = chartData.map(function(d) { return d.label; });
-            const data = chartData.map(function(d) { return d.amount; });
-            const totalSpent = data.reduce(function(a, b) { return a + b; }, 0);
-            const maxSpend = Math.max.apply(null, data);
-            const maxSpendIdx = data.indexOf(maxSpend);
+            const labels = chartDates.map(function(d) {
+                return d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '-';
+            });
+            const expenseData = chartDates.map(function(d) { return d ? (dailyExpenses[d] || 0) : 0; });
+            const incomeData = chartDates.map(function(d) { return d ? (dailyIncome[d] || 0) : 0; });
+
+            const totalSpent = expenseData.reduce(function(a, b) { return a + b; }, 0);
+            const maxVal = Math.max.apply(null, expenseData.concat(incomeData));
+            const maxSpendIdx = expenseData.indexOf(Math.max.apply(null, expenseData));
 
             const isDark = AppState.theme === 'dark';
             const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
             const textColor = isDark ? '#94a3b8' : '#64748b';
 
             const avgSpent = totalSpent / fixedLength;
-            const todaySpent = data[fixedLength - 1];
+            const todaySpent = expenseData[fixedLength - 1] || 0;
             const trendText = todaySpent > avgSpent
                 ? '<span class="negative">▲ Above average</span>'
                 : '<span class="positive">▼ Below average</span>';
@@ -1533,8 +1733,8 @@ const ChartModule = {
             const header = document.querySelector('.chart-header');
             if (header) {
                 header.innerHTML = '<div>' +
-                    '<h3>Spending Trend</h3>' +
-                    '<p style="font-size:0.75rem; color:var(--text-muted)">Daily avg: ' + Utils.formatCurrency(Math.round(avgSpent)) + '</p>' +
+                    '<h3>Income vs Expenses</h3>' +
+                    '<p style="font-size:0.75rem; color:var(--text-muted)">Daily avg spend: ' + Utils.formatCurrency(Math.round(avgSpent)) + '</p>' +
                 '</div>' +
                 '<div style="text-align:right">' + trendText + '</div>';
             }
@@ -1544,18 +1744,31 @@ const ChartModule = {
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Daily Spend',
-                        data: data,
-                        borderColor: '#6366f1',
-                        borderWidth: 4,
+                        label: 'Expenses',
+                        data: expenseData,
+                        borderColor: '#ef4444',
+                        borderWidth: 3,
                         tension: 0.4,
-                        pointRadius: data.map(function(v, i) { return v > 0 ? (i === maxSpendIdx ? 8 : 4) : 0; }),
-                        pointHoverRadius: 10,
-                        pointBackgroundColor: data.map(function(v, i) { return i === maxSpendIdx ? '#ef4444' : '#6366f1'; }),
+                        pointRadius: expenseData.map(function(v, i) { return v > 0 ? (i === maxSpendIdx ? 6 : 3) : 0; }),
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: '#ef4444',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2,
                         fill: true,
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)'
+                        backgroundColor: 'rgba(239, 68, 68, 0.08)'
+                    }, {
+                        label: 'Income',
+                        data: incomeData,
+                        borderColor: '#10b981',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        pointRadius: incomeData.map(function(v) { return v > 0 ? 3 : 0; }),
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: '#10b981',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        fill: true,
+                        backgroundColor: 'rgba(16, 185, 129, 0.08)'
                     }]
                 },
                 options: {
@@ -1582,9 +1795,12 @@ const ChartModule = {
                             borderColor: 'var(--glass-border)',
                             borderWidth: 1,
                             padding: 12,
-                            displayColors: false,
+                            displayColors: true,
+                            padding: 12,
                             callbacks: {
-                                label: function(context) { return 'Spent: ' + Utils.formatCurrency(context.raw); }
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + Utils.formatCurrency(context.raw);
+                                }
                             }
                         }
                     },
@@ -1607,7 +1823,34 @@ const ChartModule = {
 
 // ==================== INSIGHTS MODULE ====================
 const InsightsModule = {
+    backendInsights: null,
+
+    // Fetch insights from the backend AI endpoint
+    fetchBackendInsights: function() {
+        var self = this;
+        var token = API.getToken();
+        if (!token) return Promise.resolve();
+
+        return fetch('/api/ai/insights', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.insights && data.insights.length > 0) {
+                self.backendInsights = data.insights;
+            }
+            return data;
+        }).catch(function() {
+            // Silently fall back to local generation
+        });
+    },
+
     generate: function() {
+        // Use backend insights if available
+        if (this.backendInsights && this.backendInsights.length > 0) {
+            AppState.insightsCache = this.backendInsights;
+            return this.backendInsights;
+        }
+
         const stats = ExpenseModule.calculateStats();
         const insights = [];
 
@@ -1673,13 +1916,13 @@ const InsightsModule = {
         return insights;
     },
 
-    renderMini: function() {
+    renderMini: function(insights) {
         const container = document.getElementById('insights-list-mini');
         if (!container) return;
 
-        const insights = this.generate().slice(0, 2);
+        const list = insights || this.generate().slice(0, 2);
         let html = '';
-        insights.forEach(function(i) {
+        list.forEach(function(i) {
             const borderColor = i.type === 'error' ? 'negative' : (i.type === 'warning' ? 'warning' : 'primary-color');
             html += '<div class="insight-item" style="border-left: 5px solid var(--' + borderColor + ')">' +
                 '<h4>' + Utils.escapeHTML(i.title) + '</h4>' +
@@ -1689,13 +1932,13 @@ const InsightsModule = {
         container.innerHTML = html;
     },
 
-    renderFull: function() {
+    renderFull: function(insights) {
         const list = document.getElementById('full-insights-list');
         if (!list) return;
 
-        const insights = this.generate();
+        const items = insights || this.generate();
         let html = '';
-        insights.forEach(function(i) {
+        items.forEach(function(i) {
             const borderColor = i.type === 'error' ? 'negative' : (i.type === 'warning' ? 'warning' : 'primary-color');
             html += '<div class="summary-card" style="border-left: 8px solid var(--' + borderColor + ')">' +
                 '<h3>' + Utils.escapeHTML(i.title) + '</h3>' +
@@ -1763,7 +2006,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ==================== GLOBAL SEARCH ====================
 App.handleGlobalSearch = function(e) {
-    const query = e.target.value.toLowerCase().trim();
+    var query = e.target.value.trim();
     const resultsContainer = document.getElementById('global-search-results');
 
     if (!resultsContainer) return;
@@ -1781,90 +2024,96 @@ App.handleGlobalSearch = function(e) {
         }
     }
 
-    const matchedExpenses = AppState.expenses.filter(function(exp) {
-        return exp.desc.toLowerCase().indexOf(query) !== -1 ||
-               exp.category.toLowerCase().indexOf(query) !== -1;
-    }).slice(0, 5);
+    // Use backend search API
+    API.search(query).then(function(data) {
+        var html = '';
 
-    const matchedStocks = InvestmentModule.stocks.filter(function(s) {
-        return s.symbol.toLowerCase().indexOf(query) !== -1 ||
-               s.name.toLowerCase().indexOf(query) !== -1;
+        if (data.expenses && data.expenses.length > 0) {
+            html += '<div class="search-result-group"><div class="search-result-group-title">Transactions</div>';
+            data.expenses.forEach(function(exp) {
+                var desc = Utils.escapeHTML(exp.description || exp.desc || '');
+                var descSafe = desc.replace(/'/g, "\\'");
+                var isIncome = (exp.type || 'expense') === 'income';
+                html += '<div class="search-result-item" onclick="App.switchToView(\'expenses\', \'' + descSafe + '\')">' +
+                    '<div>' +
+                        '<div class="result-title">' + desc + '</div>' +
+                        '<div class="result-sub">' + exp.category + ' • ' + Utils.formatDate(exp.date) + ' • ' + (isIncome ? 'Income' : 'Expense') + '</div>' +
+                    '</div>' +
+                    '<div class="' + (isIncome ? 'income-amount' : 'negative') + '">' + (isIncome ? '+' : '-') + Utils.formatCurrency(exp.amount) + '</div>' +
+                '</div>';
+            });
+            html += '</div>';
+        }
+
+        if (data.investments && data.investments.length > 0) {
+            html += '<div class="search-result-group"><div class="search-result-group-title">Investments</div>';
+            data.investments.forEach(function(inv) {
+                html += '<div class="search-result-item" onclick="App.switchToView(\'investments\')">' +
+                    '<div>' +
+                        '<div class="result-title">' + Utils.escapeHTML(inv.symbol) + '</div>' +
+                        '<div class="result-sub">' + Utils.escapeHTML(inv.name || inv.symbol) + '</div>' +
+                    '</div>' +
+                    '<div>' + Utils.formatCurrency(inv.quantity * inv.buy_price) + '</div>' +
+                '</div>';
+            });
+            html += '</div>';
+        }
+
+        // Also match local insights
+        var matchedInsights = InsightsModule.generate().filter(function(i) {
+            var q = query.toLowerCase();
+            return i.title.toLowerCase().indexOf(q) !== -1 || i.desc.toLowerCase().indexOf(q) !== -1;
+        });
+        if (matchedInsights.length > 0) {
+            html += '<div class="search-result-group"><div class="search-result-group-title">Insights</div>';
+            matchedInsights.forEach(function(insight) {
+                html += '<div class="search-result-item" onclick="App.switchToView(\'insights\')">' +
+                    '<div>' +
+                        '<div class="result-title">' + Utils.escapeHTML(insight.title) + '</div>' +
+                        '<div class="result-sub">' + Utils.escapeHTML(insight.desc).substring(0, 45) + '...</div>' +
+                    '</div>' +
+                '</div>';
+            });
+            html += '</div>';
+        }
+
+        if (html === '') {
+            html = '<div style="padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.9rem;">No results found for "' + Utils.escapeHTML(query) + '"</div>';
+        }
+
+        resultsContainer.innerHTML = html;
+        resultsContainer.classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    }).catch(function() {
+        // Fallback to local filtering
+        var localHtml = '';
+        var q = query.toLowerCase();
+        var localExpenses = AppState.expenses.filter(function(exp) {
+            var desc = exp.description || exp.desc || '';
+            return desc.toLowerCase().indexOf(q) !== -1 || exp.category.toLowerCase().indexOf(q) !== -1;
+        }).slice(0, 5);
+        if (localExpenses.length > 0) {
+            localHtml += '<div class="search-result-group"><div class="search-result-group-title">Transactions</div>';
+            localExpenses.forEach(function(exp) {
+                var descS = Utils.escapeHTML(exp.description || exp.desc || '');
+                var isInc = (exp.type || 'expense') === 'income';
+                localHtml += '<div class="search-result-item" onclick="App.switchToView(\'expenses\')">' +
+                    '<div>' +
+                        '<div class="result-title">' + descS + '</div>' +
+                        '<div class="result-sub">' + exp.category + '</div>' +
+                    '</div>' +
+                    '<div class="' + (isInc ? 'income-amount' : 'negative') + '">' + (isInc ? '+' : '-') + Utils.formatCurrency(exp.amount) + '</div>' +
+                '</div>';
+            });
+            localHtml += '</div>';
+        }
+        if (localHtml === '') {
+            localHtml = '<div style="padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.9rem;">No results found for "' + Utils.escapeHTML(query) + '"</div>';
+        }
+        resultsContainer.innerHTML = localHtml;
+        resultsContainer.classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
     });
-
-    const matchedIPOs = InvestmentModule.ipos.filter(function(ipo) {
-        return ipo.company.toLowerCase().indexOf(query) !== -1;
-    });
-
-    const insights = InsightsModule.generate();
-    const matchedInsights = insights.filter(function(i) {
-        return i.title.toLowerCase().indexOf(query) !== -1 ||
-               i.desc.toLowerCase().indexOf(query) !== -1;
-    });
-
-    let html = '';
-
-    if (matchedExpenses.length > 0) {
-        html += '<div class="search-result-group"><div class="search-result-group-title">Transactions</div>';
-        matchedExpenses.forEach(function(exp) {
-            const descEscaped = Utils.escapeHTML(exp.desc).replace(/'/g, "\\'");
-            html += '<div class="search-result-item" onclick="App.switchToView(\'expenses\', \'' + descEscaped + '\')">' +
-                '<div>' +
-                    '<div class="result-title">' + Utils.escapeHTML(exp.desc) + '</div>' +
-                    '<div class="result-sub">' + exp.category + ' • ' + Utils.formatDate(exp.date) + '</div>' +
-                '</div>' +
-                '<div class="negative">-' + Utils.formatCurrency(exp.amount) + '</div>' +
-            '</div>';
-        });
-        html += '</div>';
-    }
-
-    if (matchedStocks.length > 0 || matchedIPOs.length > 0) {
-        html += '<div class="search-result-group"><div class="search-result-group-title">Investments</div>';
-
-        matchedStocks.forEach(function(s) {
-            html += '<div class="search-result-item" onclick="App.switchToView(\'investments\')">' +
-                '<div>' +
-                    '<div class="result-title">' + s.symbol.replace('.BSE', '') + '</div>' +
-                    '<div class="result-sub">' + Utils.escapeHTML(s.name) + '</div>' +
-                '</div>' +
-                '<div>' + Utils.formatCurrency(s.price) + '</div>' +
-            '</div>';
-        });
-
-        matchedIPOs.forEach(function(ipo) {
-            html += '<div class="search-result-item" onclick="App.switchToView(\'investments\')">' +
-                '<div>' +
-                    '<div class="result-title">' + Utils.escapeHTML(ipo.company) + '</div>' +
-                    '<div class="result-sub">IPO • ' + ipo.status.toUpperCase() + '</div>' +
-                '</div>' +
-                '<div>' + Utils.escapeHTML(ipo.price) + '</div>' +
-            '</div>';
-        });
-
-        html += '</div>';
-    }
-
-    if (matchedInsights.length > 0) {
-        html += '<div class="search-result-group"><div class="search-result-group-title">Insights</div>';
-        matchedInsights.forEach(function(insight) {
-            html += '<div class="search-result-item" onclick="App.switchToView(\'insights\')">' +
-                '<div>' +
-                    '<div class="result-title">' + Utils.escapeHTML(insight.title) + '</div>' +
-                    '<div class="result-sub">' + Utils.escapeHTML(insight.desc).substring(0, 45) + '...</div>' +
-                '</div>' +
-            '</div>';
-        });
-        html += '</div>';
-    }
-
-    if (html === '') {
-        html = '<div style="padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.9rem;">No results found for "' + Utils.escapeHTML(query) + '"</div>';
-    }
-
-    resultsContainer.innerHTML = html;
-    resultsContainer.classList.remove('hidden');
-
-    if (window.lucide) lucide.createIcons();
 };
 
 // ==================== VIEW SWITCHING ====================
@@ -1891,7 +2140,6 @@ App.switchView = function(viewId) {
             break;
         case 'investments':
             InvestmentModule.render();
-            EconomistTeam.renderTeam();
             break;
         case 'dashboard':
             App.refreshData();
@@ -1968,10 +2216,17 @@ App.renderAll = function() {
         const balanceEl = document.getElementById('display-balance');
         const budgetEl = document.getElementById('display-budget');
         const expensesEl = document.getElementById('display-expenses');
+        const incomeEl = document.getElementById('display-income');
+        const cashflowEl = document.getElementById('display-cashflow');
 
-        if (balanceEl) balanceEl.textContent = Utils.formatCurrency(AppState.balance - stats.totalAllTime);
+        if (balanceEl) balanceEl.textContent = Utils.formatCurrency(AppState.balance - stats.totalAllTime + stats.totalAllTimeIncome);
         if (budgetEl) budgetEl.textContent = Utils.formatCurrency(AppState.budget);
         if (expensesEl) expensesEl.textContent = Utils.formatCurrency(stats.totalMonthly);
+        if (incomeEl) incomeEl.textContent = Utils.formatCurrency(stats.totalMonthlyIncome);
+        if (cashflowEl) {
+            cashflowEl.textContent = Utils.formatCurrency(Math.abs(stats.netCashflow));
+            cashflowEl.style.color = stats.netCashflow >= 0 ? 'var(--positive)' : 'var(--negative)';
+        }
 
         const percent = AppState.budget > 0 ? Math.min(100, (stats.totalMonthly / AppState.budget) * 100) : 0;
         const pBar = document.getElementById('budget-progress-bar');
@@ -1982,15 +2237,40 @@ App.renderAll = function() {
         const pText = document.getElementById('budget-progress-text');
         if (pText) pText.textContent = Math.round(percent) + '% of budget used';
 
+        const cfText = document.getElementById('cashflow-progress-text');
+        if (cfText) {
+            cfText.textContent = stats.netCashflow >= 0 ? 'Positive cashflow ✓' : 'Negative cashflow ⚠';
+        }
+
         InsightsModule.renderMini();
 
         if (AppState.currentView === 'dashboard') {
             ChartModule.renderSpendingTrend();
         }
-
     } catch (err) {
         console.error('Render All failed:', err);
     }
+};
+
+// Async refresh of backend-powered insights (fire-and-forget)
+App.refreshAIInsights = function() {
+    InsightsModule.fetchBackendInsights().then(function(data) {
+        if (data && data.insights) {
+            InsightsModule.renderMini();
+            if (AppState.currentView === 'insights') {
+                InsightsModule.renderFull();
+            }
+            // Update notification badge with alert count
+            var alerts = data.insights.filter(function(i) { return i.type === 'error' || i.type === 'warning'; });
+            if (alerts.length > 0 && AppState.sessionActive) {
+                var badge = document.getElementById('notification-badge');
+                if (badge) {
+                    badge.textContent = alerts.length;
+                    badge.style.display = 'flex';
+                }
+            }
+        }
+    }).catch(function() {});
 };
 
 App.saveState = function() {
@@ -2029,7 +2309,7 @@ App.handleSetup = function(e) {
         localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(data.user));
         Modal.closeAll();
         App.renderAll();
-        Toast.show('Setup complete! Start tracking your expenses.', 'success');
+        Toast.show('Financial settings saved!', 'success');
     }).catch(function(err) {
         // Fallback to localStorage if API not available
         AppState.balance = balance;
@@ -2039,7 +2319,7 @@ App.handleSetup = function(e) {
         localStorage.setItem(CONFIG.STORAGE_KEYS.SETUP_COMPLETE, 'true');
         Modal.closeAll();
         App.renderAll();
-        Toast.show('Setup complete! Start tracking your expenses.', 'success');
+        Toast.show('Financial settings saved!', 'success');
     });
 }
 
@@ -2103,49 +2383,91 @@ const AIStockManager = {
     }
 };
 
-// ==================== ECONOMIST TEAM ====================
-const EconomistTeam = {
-    members: [
-        { id: 1, name: 'Dr. Arjun Patel', role: 'Macro Economist', specialty: 'Monetary Policy & Inflation', accuracy: 94, avatar: 'AP' },
-        { id: 2, name: 'Priya Sharma', role: 'Market Analyst', specialty: 'Technical Analysis', accuracy: 91, avatar: 'PS' },
-        { id: 3, name: 'Raj Kumar', role: 'Behavioral Economist', specialty: 'Consumer Spending', accuracy: 88, avatar: 'RK' },
-        { id: 4, name: 'Anita Desai', role: 'Investment Strategist', specialty: 'Portfolio Management', accuracy: 96, avatar: 'AD' },
-        { id: 5, name: 'Vikram Singh', role: 'FinTech Expert', specialty: 'Digital Payments & Crypto', accuracy: 89, avatar: 'VS' }
-    ],
-    
-    renderTeam: function() {
-        const container = document.getElementById('economist-team');
-        if (!container) return;
-        
-        let html = '';
-        this.members.forEach(function(member) {
-            html += '<div class="economist-card">' +
-                '<div class="economist-avatar">' + member.avatar + '</div>' +
-                '<div class="economist-info">' +
-                    '<h4>' + member.name + '</h4>' +
-                    '<p class="role">' + member.role + '</p>' +
-                    '<p class="specialty">' + member.specialty + '</p>' +
+// ==================== BUDGET MODULE ====================
+const BudgetModule = {
+    openModal: function() {
+        Utils.clearAllErrors('budget-form');
+        Modal.open('budget-modal');
+        this.loadBudgets();
+    },
+
+    loadBudgets: function() {
+        var list = document.getElementById('budget-list');
+        if (!list) return;
+        list.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);"><i data-lucide="loader" class="loading-spin"></i> Loading budgets...</div>';
+        if (window.lucide) lucide.createIcons();
+
+        var self = this;
+        API.getBudgets().then(function(data) {
+            self.renderBudgets(data.budgets || []);
+        }).catch(function() {
+            list.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Could not load budgets. Please try again.</div>';
+        });
+    },
+
+    renderBudgets: function(budgets) {
+        var list = document.getElementById('budget-list');
+        if (!list) return;
+
+        if (!budgets || budgets.length === 0) {
+            list.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted); font-size:0.9rem;">No category budgets set yet. Add one below.</div>';
+            return;
+        }
+
+        var monthExpenses = {};
+        AppState.expenses.filter(function(e) { return (e.type || 'expense') === 'expense'; }).forEach(function(e) {
+            monthExpenses[e.category] = (monthExpenses[e.category] || 0) + e.amount;
+        });
+
+        var html = '<div style="margin-bottom:0.5rem; font-size:0.85rem; color:var(--text-muted); font-weight:600;">Current Monthly Budgets</div>';
+        budgets.forEach(function(b) {
+            var spent = monthExpenses[b.category] || b.spent || 0;
+            var percent = Math.min(100, (spent / b.monthly_limit) * 100);
+            var isOver = spent > b.monthly_limit;
+            html += '<div class="budget-item" data-category="' + Utils.escapeHTML(b.category) + '">' +
+                '<div>' +
+                    '<div class="budget-cat">' + Utils.escapeHTML(b.category) + '</div>' +
+                    '<div class="budget-progress">' + Utils.formatCurrency(spent) + ' / ' + Utils.formatCurrency(b.monthly_limit) + '</div>' +
+                    '<div class="mini-bar"><div class="mini-bar-fill" style="width:' + percent + '%;background:' + (isOver ? 'var(--negative)' : 'var(--positive)') + '"></div></div>' +
                 '</div>' +
-                '<div class="accuracy">' +
-                    '<span>' + member.accuracy + '%</span>' +
-                    '<small>accuracy</small>' +
+                '<div class="' + (isOver ? 'budget-over' : 'budget-ok') + '">' +
+                    (isOver ? Math.round(percent) + '% ⚠' : Math.round(percent) + '%') +
                 '</div>' +
             '</div>';
         });
-        
-        container.innerHTML = html;
+        list.innerHTML = html;
     },
-    
-    getAdvice: function(topic) {
-        const advisors = this.members.filter(function(m) {
-            return m.specialty.toLowerCase().indexOf(topic.toLowerCase()) !== -1;
-        });
-        
-        if (advisors.length === 0) {
-            return this.members[Math.floor(Math.random() * this.members.length)];
+
+    save: function() {
+        Utils.clearAllErrors('budget-limit-error');
+        var category = document.getElementById('budget-category').value;
+        var limit = parseFloat(document.getElementById('budget-limit').value);
+
+        if (isNaN(limit) || limit <= 0) {
+            Utils.showError('budget-limit-error', 'Please enter a valid amount (₹1 or more)');
+            return;
         }
-        
-        return advisors[0];
+
+        API.setBudget(category, limit).then(function() {
+            document.getElementById('budget-limit').value = '';
+            Toast.show('Budget set for ' + category, 'success');
+            BudgetModule.loadBudgets();
+        }).catch(function(err) {
+            Toast.show('Failed to set budget: ' + err.message, 'error');
+        });
+    },
+
+    delete: function() {
+        var category = document.getElementById('budget-category').value;
+        if (!category) return;
+
+        Modal.closeAll();
+        API.deleteBudget(category).then(function() {
+            Toast.show('Budget removed for ' + category, 'success');
+            BudgetModule.loadBudgets();
+        }).catch(function(err) {
+            Toast.show('Failed to remove budget: ' + err.message, 'error');
+        });
     }
 };
 
@@ -2212,11 +2534,43 @@ const AIChatbot = {
         
         this.addMessage(message, 'user');
         
-        // Simulate AI thinking
-        setTimeout(function() {
-            const response = AIChatbot.generateResponse(message);
-            AIChatbot.addMessage(response, 'ai');
-        }, 1000);
+        // Try backend AI chat endpoint first
+        var token = API.getToken();
+        if (token) {
+            fetch('/api/ai/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ message: message, history: AIChatbot.conversationHistory })
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.response) {
+                    // Store in conversation history
+                    AIChatbot.conversationHistory.push({ role: 'user', text: message });
+                    AIChatbot.conversationHistory.push({ role: 'ai', text: data.response });
+                    // Cap at 20 messages (10 exchanges)
+                    if (AIChatbot.conversationHistory.length > 20) {
+                        AIChatbot.conversationHistory = AIChatbot.conversationHistory.slice(-20);
+                    }
+                    AIChatbot.addMessage(data.response, 'ai');
+                    return;
+                }
+                // Fallback to local generation for unconfigured/error modes
+                setTimeout(function() {
+                    var response = AIChatbot.generateResponse(message);
+                    AIChatbot.addMessage(response, 'ai');
+                }, 500);
+            }).catch(function() {
+                // Fallback to local generation
+                setTimeout(function() {
+                    var response = AIChatbot.generateResponse(message);
+                    AIChatbot.addMessage(response, 'ai');
+                }, 500);
+            });
+        } else {
+            setTimeout(function() {
+                var response = AIChatbot.generateResponse(message);
+                AIChatbot.addMessage(response, 'ai');
+            }, 1000);
+        }
     },
     
     addMessage: function(text, sender) {
@@ -2327,21 +2681,6 @@ const AIChatbot = {
             return response;
         }
 
-        // Market advice
-        if (question.includes('market') || question.includes('nifty') || question.includes('sensex')) {
-            const economist = EconomistTeam.getAdvice('Market');
-            const niftyChange = (Math.random() - 0.5) * 2;
-            const sensexChange = (Math.random() - 0.5) * 2;
-
-            return '📊 Market Update (Simulated):\n\n' +
-                   'NIFTY 50: ' + (niftyChange >= 0 ? '▲' : '▼') + ' ' + Math.abs(niftyChange).toFixed(2) + '%\n' +
-                   'SENSEX: ' + (sensexChange >= 0 ? '▲' : '▼') + ' ' + Math.abs(sensexChange).toFixed(2) + '%\n\n' +
-                   'According to ' + economist.name + ' (' + economist.role + '):\n' +
-                   '"Market shows mixed signals with volatility at ' + (10 + Math.random() * 5).toFixed(1) + '%. ' +
-                   'Consider diversifying across sectors like IT, Banking, and Energy. ' +
-                   'Gold allocation (5-10%) can hedge against market volatility."';
-        }
-
         // Savings query
         if (question.includes('save') || question.includes('saving') || question.includes('suggestion') || question.includes('tip') || question.includes('advice')) {
             let response = '💡 Savings Tips:\n\n';
@@ -2420,7 +2759,6 @@ const AIChatbot = {
 // Initialize AI Chatbot on load
 document.addEventListener('DOMContentLoaded', function() {
     AIChatbot.init();
-    EconomistTeam.renderTeam();
     AIStockManager.renderRecommendations();
 
     // Refresh recommendations button

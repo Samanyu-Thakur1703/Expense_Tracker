@@ -86,6 +86,53 @@ router.post('/', authenticate, async (req, res) => {
     }
 });
 
+// GET /api/expenses/export — CSV export (MUST be before /:id)
+router.get('/export', authenticate, async (req, res) => {
+    try {
+        const db = getDatabase();
+        const { start_date, end_date, category, type = 'all' } = req.query;
+
+        let sql = 'SELECT date, type, category, description, amount FROM expenses WHERE user_id = ?';
+        const args = [req.userId];
+
+        if (start_date) {
+            sql += ' AND date >= ?';
+            args.push(start_date);
+        }
+        if (end_date) {
+            sql += ' AND date <= ?';
+            args.push(end_date);
+        }
+        if (category && category !== 'all') {
+            sql += ' AND category = ?';
+            args.push(category);
+        }
+        if (type && type !== 'all') {
+            sql += ' AND type = ?';
+            args.push(type);
+        }
+
+        sql += ' ORDER BY date DESC';
+
+        const result = await db.execute({ sql, args });
+        const rows = result.rows;
+
+        let csv = 'Date,Type,Category,Description,Amount\n';
+        for (const row of rows) {
+            const desc = (row.description || '').replace(/"/g, '""');
+            csv += `${row.date},${row.type},${row.category},"${desc}",${row.amount}\n`;
+        }
+
+        const filename = `fintrack-export-${new Date().toISOString().split('T')[0]}.csv`;
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csv);
+    } catch (err) {
+        console.error('CSV export error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 router.put('/:id', authenticate, async (req, res) => {
     try {
         const { amount, category, description, date, type } = req.body;
