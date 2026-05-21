@@ -99,6 +99,28 @@ async function initDatabase() {
     await database.execute('CREATE INDEX IF NOT EXISTS idx_expenses_user_category ON expenses(user_id, category)');
     await database.execute('CREATE INDEX IF NOT EXISTS idx_investments_user_symbol ON investments(user_id, symbol)');
 
+    // --- Migration: Add type column to expenses if missing ---
+    const tableInfo = await database.execute("PRAGMA table_info('expenses')");
+    const hasTypeColumn = tableInfo.rows.some(row => row.name === 'type');
+    if (!hasTypeColumn) {
+        console.log('Migrating expenses table: adding type column...');
+        await database.execute("ALTER TABLE expenses ADD COLUMN type TEXT NOT NULL DEFAULT 'expense' CHECK(type IN ('expense', 'income'))");
+    }
+
+    // --- Create budgets table ---
+    await database.execute(`
+        CREATE TABLE IF NOT EXISTS budgets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            monthly_limit REAL NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user_id, category)
+        )
+    `);
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets(user_id, category)');
+
     const existing = await database.execute({
         sql: 'SELECT id FROM users WHERE email = ?',
         args: ['demo@fintrack.com']
@@ -115,19 +137,19 @@ async function initDatabase() {
         const userId = Number(insertResult.lastInsertRowid);
 
         const sampleExpenses = [
-            { amount: 450, category: 'Food', description: 'Grocery shopping', date: '2026-05-12' },
-            { amount: 1200, category: 'Bills', description: 'Electricity bill', date: '2026-05-13' },
-            { amount: 800, category: 'Travel', description: 'Metro pass', date: '2026-05-14' },
-            { amount: 2500, category: 'Shopping', description: 'New headphones', date: '2026-05-15' },
-            { amount: 350, category: 'Food', description: 'Restaurant dinner', date: '2026-05-16' },
-            { amount: 500, category: 'Health', description: 'Pharmacy', date: '2026-05-17' },
-            { amount: 1500, category: 'Entertainment', description: 'Movie tickets + snacks', date: '2026-05-17' },
+            { amount: 450, category: 'Food', description: 'Grocery shopping', date: '2026-05-12', type: 'expense' },
+            { amount: 1200, category: 'Bills', description: 'Electricity bill', date: '2026-05-13', type: 'expense' },
+            { amount: 800, category: 'Travel', description: 'Metro pass', date: '2026-05-14', type: 'expense' },
+            { amount: 2500, category: 'Shopping', description: 'New headphones', date: '2026-05-15', type: 'expense' },
+            { amount: 350, category: 'Food', description: 'Restaurant dinner', date: '2026-05-16', type: 'expense' },
+            { amount: 500, category: 'Health', description: 'Pharmacy', date: '2026-05-17', type: 'expense' },
+            { amount: 1500, category: 'Entertainment', description: 'Movie tickets + snacks', date: '2026-05-17', type: 'expense' },
         ];
 
         for (const exp of sampleExpenses) {
             await database.execute({
-                sql: 'INSERT INTO expenses (user_id, amount, category, description, date) VALUES (?, ?, ?, ?, ?)',
-                args: [userId, exp.amount, exp.category, exp.description, exp.date]
+                sql: 'INSERT INTO expenses (user_id, amount, category, description, date, type) VALUES (?, ?, ?, ?, ?, ?)',
+                args: [userId, exp.amount, exp.category, exp.description, exp.date, exp.type]
             });
         }
 
