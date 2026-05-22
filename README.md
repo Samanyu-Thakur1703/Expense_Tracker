@@ -216,3 +216,4 @@ ex_tracker/
 ## 📄 License
 
 MIT © [Samanyu Thakur](https://github.com/Samanyu-Thakur1703)
+MIT © [Tamanna Kakkar](https://github.com/TamannaKakkar2310)
