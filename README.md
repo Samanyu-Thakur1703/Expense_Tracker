@@ -195,7 +195,7 @@ ex_tracker/
 
 | Login | Dashboard |
 |-------|-----------|
-| ![Login](https://via.placeholder.com/400x250?text=Login+Page) | ![Dashboard](ui-overhaul-dashboard.png) |
+| ![Login](login.png) | ![Dashboard](ui-overhaul-dashboard.png) |
 
 > Full screenshot gallery coming soon.
 

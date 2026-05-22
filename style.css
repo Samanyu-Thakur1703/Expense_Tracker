@@ -1,10 +1,7 @@
-﻿/* ============================================================
-    FinTrack AI - Luxury Fintech Dashboard
-    Aesthetic: Dark Luxury + Glassmorphism + Gold Accents
-    ============================================================ */
+﻿
 
 :root {
-    /* Luxury Dark Palette */
+   
     --bg-primary: #0a0a0f;
     --bg-secondary: #12121a;
     --bg-tertiary: #1a1a2e;
@@ -74,7 +71,7 @@ body {
     to { opacity: 1; }
 }
 
-/* Luxury Entrance Animations */
+
 .auth-wrapper { animation: slideInLeft 0.8s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes slideInLeft {
     from { opacity: 0; transform: translateX(-60px); }
@@ -115,7 +112,7 @@ body {
     }
 }
 
-/* Auth Screen - Luxury Glassmorphism */
+
 .auth-screen {
     position: fixed;
     inset: 0;
@@ -247,7 +244,7 @@ body {
 .auth-switch a { color: var(--gold-primary); font-weight: 600; text-decoration: none; margin-left: 0.5rem; }
 .auth-switch a:hover { text-decoration: underline; }
 
-/* App Layout - Luxury Glassmorphism */
+
 .app-container { display: flex; min-height: 100vh; }
 
 .sidebar {
@@ -273,7 +270,7 @@ body {
     background: transparent;
 }
 
-/* Sidebar Nav - Luxury Style */
+
 .sidebar-nav {
     margin-top: 3rem;
     display: flex;
@@ -283,7 +280,7 @@ body {
     transition: opacity 0.3s ease;
 }
 
-/* Sidebar Collapse Styles */
+
 .sidebar-collapse-btn {
     position: absolute;
     right: -12px;
@@ -446,7 +443,7 @@ body {
 .user-name { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .user-role { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Topbar - Glassmorphism */
+
 .topbar {
     height: 70px;
     padding: 0 2rem;
@@ -566,7 +563,6 @@ body {
     border: 2px solid var(--bg-secondary); 
 }
 
-/* Views Container */
 #view-container { padding: 2.5rem; flex: 1; }
 
 .view-header { margin-bottom: 2rem; }
@@ -580,7 +576,7 @@ body {
 }
 .text-muted { color: var(--text-muted); font-size: 1rem; }
 
-/* Market Ticker - Luxury Style */
+
 .market-ticker { 
     display: flex; 
     align-items: center; 
@@ -611,7 +607,6 @@ body {
     font-weight: 600;
 }
 
-/* Summary Grid - Glassmorphism Cards with Gold Accents */
 .summary-grid { 
     display: grid; 
     grid-template-columns: repeat(3, 1fr); 
@@ -709,7 +704,7 @@ body {
     border-radius: 10px;
 }
 
-/* Dashboard Rows */
+
 .dashboard-row { 
     display: grid; 
     grid-template-columns: 1.8fr 1fr; 
@@ -748,7 +743,7 @@ body {
     font-family: var(--font-display);
 }
 
-/* Table Section - Luxury Style */
+
 .view-header.row { display: flex; align-items: flex-end; justify-content: space-between; }
 .view-actions { display: flex; gap: 1rem; }
 
@@ -835,7 +830,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
     border: 1px solid rgba(251, 191, 36, 0.2);
 }
 
-/* Stock List - Luxury Cards */
+
 .stock-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .stock-item { 
     display: flex; 
@@ -895,7 +890,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 .ipo-status.upcoming { background: rgba(245, 158, 11, 0.12); color: var(--gold-secondary); border-color: rgba(245, 158, 11, 0.3); }
 .ipo-status.closed { background: rgba(100, 116, 139, 0.1); color: var(--text-muted); border-color: rgba(100, 116, 139, 0.2); }
 
-/* Utility Classes */
+
 .positive { color: var(--positive); }
 .negative { color: var(--negative); }
 .view { display: none; animation: fadeIn 0.5s ease-out; }
@@ -903,7 +898,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Loading Shimmer */
+
 .loading-shimmer {
     height: 100px;
     background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--glass-bg) 50%, var(--bg-tertiary) 75%);
@@ -913,7 +908,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-/* Buttons - Luxury Style */
+
 .btn { 
     display: inline-flex; 
     align-items: center; 
@@ -954,7 +949,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 }
 .full-width { width: 100%; }
 
-/* Modals - Luxury Glassmorphism */
+
 .modal { 
     display: none; 
     position: fixed; 
@@ -1010,7 +1005,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
 .modal-footer { margin-top: 2.5rem; display: flex; justify-content: flex-end; }
 
-/* Toast - Luxury Style */
+
 .toast-container { 
     position: fixed; 
     bottom: 2rem; 
@@ -1037,7 +1032,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 }
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-/* Insights - Luxury Style */
+
 .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
 .insight-item { 
     background: var(--glass-bg);
@@ -1085,7 +1080,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
 
 .btn-text i { width: 18px; height: 18px; }
 
-/* ==================== ECONOMIST TEAM - Luxury Cards ==================== */
+
 .economist-card {
     background: var(--bg-tertiary);
     padding: 1.25rem;
@@ -1167,7 +1162,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
     font-weight: 500;
 }
 
-/* ==================== AI STOCK MANAGER - Luxury Style ==================== */
+
 .rec-item {
     background: var(--bg-tertiary);
     padding: 1.25rem;
@@ -1219,7 +1214,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
     line-height: 1.5;
 }
 
-/* ==================== AI CHATBOT - Luxury Glassmorphism ==================== */
+
 .chatbot-fab {
     position: fixed;
     bottom: 2rem;
@@ -1265,7 +1260,7 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
     overflow: hidden;
 }
 
-/* Responsive chatbot for smaller screens */
+
 @media (max-width: 600px) {
     .chatbot {
         right: 0.5rem;
@@ -1435,7 +1430,6 @@ tr:hover td { background-color: rgba(251, 191, 36, 0.03); }
     box-shadow: 0 6px 16px var(--gold-glow);
 }
 
-/* ==================== Responsive - Luxury Style ==================== */
 @media (max-width: 1024px) {
     .dashboard-row { grid-template-columns: 1fr; }
     .search-container { width: 300px; }
