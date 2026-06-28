@@ -88,7 +88,7 @@ router.post('/signup', async (req, res) => {
 
         res.status(201).json({
             message: 'Account created successfully',
-            user: { id: Number(insertRes.lastInsertRowid), name, email },
+            user: { id: Number(insertRes.lastInsertRowid), name, email, currency: 'INR' },
             token
         });
     } catch (err) {
@@ -113,7 +113,7 @@ router.post('/login', async (req, res) => {
 
         const db = getDatabase();
         const result = await db.execute({
-            sql: 'SELECT id, name, email, password_hash, balance, budget FROM users WHERE email = ?',
+            sql: 'SELECT id, name, email, password_hash, balance, budget, currency FROM users WHERE email = ?',
             args: [email]
         });
 
@@ -135,7 +135,8 @@ router.post('/login', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 balance: user.balance,
-                budget: user.budget
+                budget: user.budget,
+                currency: user.currency || 'INR'
             },
             token
         });
@@ -227,7 +228,7 @@ router.post('/verify-otp', async (req, res) => {
 
         // Find or create user
         let userResult = await db.execute({
-            sql: 'SELECT id, name, email, balance, budget FROM users WHERE email = ?',
+            sql: 'SELECT id, name, email, balance, budget, currency FROM users WHERE email = ?',
             args: [email]
         });
 
@@ -244,7 +245,8 @@ router.post('/verify-otp', async (req, res) => {
                 name: name,
                 email: email,
                 balance: 0,
-                budget: 0
+                budget: 0,
+                currency: 'INR'
             };
         } else {
             user = userResult.rows[0];
@@ -259,7 +261,8 @@ router.post('/verify-otp', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 balance: user.balance,
-                budget: user.budget
+                budget: user.budget,
+                currency: user.currency || 'INR'
             },
             token,
             is_new: userResult.rows.length === 0
@@ -274,7 +277,7 @@ router.get('/me', authenticate, async (req, res) => {
     try {
         const db = getDatabase();
         const result = await db.execute({
-            sql: 'SELECT id, name, email, balance, budget, created_at FROM users WHERE id = ?',
+            sql: 'SELECT id, name, email, balance, budget, currency, created_at FROM users WHERE id = ?',
             args: [req.userId]
         });
         const user = result.rows[0];
@@ -290,7 +293,7 @@ router.get('/me', authenticate, async (req, res) => {
 
 router.put('/settings', authenticate, async (req, res) => {
     try {
-        const { balance, budget } = req.body;
+        const { balance, budget, currency } = req.body;
         const db = getDatabase();
 
         if (balance !== undefined) {
@@ -305,9 +308,15 @@ router.put('/settings', authenticate, async (req, res) => {
                 args: [budget, req.userId]
             });
         }
+        if (currency !== undefined) {
+            await db.execute({
+                sql: 'UPDATE users SET currency = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                args: [currency, req.userId]
+            });
+        }
 
         const result = await db.execute({
-            sql: 'SELECT id, name, email, balance, budget FROM users WHERE id = ?',
+            sql: 'SELECT id, name, email, balance, budget, currency FROM users WHERE id = ?',
             args: [req.userId]
         });
         res.json({ message: 'Settings updated', user: result.rows[0] });

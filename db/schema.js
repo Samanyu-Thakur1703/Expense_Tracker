@@ -107,6 +107,14 @@ async function initDatabase() {
         await database.execute("ALTER TABLE expenses ADD COLUMN type TEXT NOT NULL DEFAULT 'expense' CHECK(type IN ('expense', 'income'))");
     }
 
+    // --- Migration: Add currency column to users if missing ---
+    const userTableInfo = await database.execute("PRAGMA table_info('users')");
+    const hasCurrencyColumn = userTableInfo.rows.some(row => row.name === 'currency');
+    if (!hasCurrencyColumn) {
+        console.log('Migrating users table: adding currency column...');
+        await database.execute("ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'");
+    }
+
     // --- Create budgets table ---
     await database.execute(`
         CREATE TABLE IF NOT EXISTS budgets (

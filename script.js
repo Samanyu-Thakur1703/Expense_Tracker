@@ -98,7 +98,8 @@ const CONFIG = {
         THEME: 'fintrack_theme',
         API_CONFIG: 'fintrack_api_config',
         SETUP_COMPLETE: 'fintrack_setup_complete',
-        SIDEBAR_COLLAPSED: 'fintrack_sidebar_collapsed'
+        SIDEBAR_COLLAPSED: 'fintrack_sidebar_collapsed',
+        CURRENCY: 'fintrack_currency'
     },
     API: {
         ALPHA_VANTAGE_BASE: 'https://www.alphavantage.co/query',
@@ -107,7 +108,18 @@ const CONFIG = {
     },
     DEBOUNCE_DELAY: 300,
     STOCK_UPDATE_INTERVAL: 60000,
-    CATEGORIES: ['Food', 'Travel', 'Bills', 'Shopping', 'Health', 'Investment', 'Entertainment', 'Others']
+    CATEGORIES: ['Food', 'Travel', 'Bills', 'Shopping', 'Health', 'Investment', 'Entertainment', 'Others'],
+    CURRENCIES: {
+        'INR': { code: 'INR', symbol: '₹', locale: 'en-IN', label: 'Indian Rupee (₹)' },
+        'USD': { code: 'USD', symbol: '$', locale: 'en-US', label: 'US Dollar ($)' },
+        'EUR': { code: 'EUR', symbol: '€', locale: 'de-DE', label: 'Euro (€)' },
+        'GBP': { code: 'GBP', symbol: '£', locale: 'en-GB', label: 'British Pound (£)' },
+        'JPY': { code: 'JPY', symbol: '¥', locale: 'ja-JP', label: 'Japanese Yen (¥)' },
+        'AUD': { code: 'AUD', symbol: 'A$', locale: 'en-AU', label: 'Australian Dollar (A$)' },
+        'CAD': { code: 'CAD', symbol: 'C$', locale: 'en-CA', label: 'Canadian Dollar (C$)' },
+        'SGD': { code: 'SGD', symbol: 'S$', locale: 'en-SG', label: 'Singapore Dollar (S$)' },
+        'AED': { code: 'AED', symbol: 'د.إ', locale: 'ar-AE', label: 'UAE Dirham (د.إ)' }
+    }
 };
 
 // ==================== UTILITIES MODULE ====================
@@ -133,10 +145,14 @@ const Utils = {
 
     formatCurrency: function(amount) {
         const num = parseFloat(amount);
-        if (isNaN(num)) return '₹0.00';
-        return new Intl.NumberFormat('en-IN', {
+        if (isNaN(num)) {
+            const def = CONFIG.CURRENCIES[AppState.currency] || CONFIG.CURRENCIES.INR;
+            return def.symbol + '0.00';
+        }
+        const curr = CONFIG.CURRENCIES[AppState.currency] || CONFIG.CURRENCIES.INR;
+        return new Intl.NumberFormat(curr.locale, {
             style: 'currency',
-            currency: 'INR',
+            currency: curr.code,
             maximumFractionDigits: 2
         }).format(num);
     },
@@ -194,6 +210,7 @@ const AppState = {
     currentView: 'dashboard',
     theme: localStorage.getItem(CONFIG.STORAGE_KEYS.THEME) || 'light',
     apiConfig: JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEYS.API_CONFIG)) || { provider: 'alpha_vantage', key: '' },
+    currency: localStorage.getItem(CONFIG.STORAGE_KEYS.CURRENCY) || 'INR',
     charts: {},
     stockUpdateInterval: null
 };
@@ -284,9 +301,11 @@ const Auth = {
             AppState.sessionActive = true;
             AppState.balance = data.user.balance || 0;
             AppState.budget = data.user.budget || 0;
+            AppState.currency = data.user.currency || 'INR';
             API.setToken(data.token);
             localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(data.user));
             localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, 'true');
+            localStorage.setItem(CONFIG.STORAGE_KEYS.CURRENCY, AppState.currency);
             Toast.show('Welcome back, ' + data.user.name, 'success');
             App.showApp();
         }).catch(function(err) {
@@ -326,9 +345,11 @@ const Auth = {
             AppState.sessionActive = true;
             AppState.balance = data.user.balance || 0;
             AppState.budget = data.user.budget || 0;
+            AppState.currency = data.user.currency || 'INR';
             API.setToken(data.token);
             localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(data.user));
             localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, 'true');
+            localStorage.setItem(CONFIG.STORAGE_KEYS.CURRENCY, AppState.currency);
             Toast.show('Account created! Welcome, ' + name, 'success');
             App.showApp();
         }).catch(function(err) {
@@ -549,6 +570,21 @@ const App = {
             apiConfigForm.addEventListener('submit', function(e) { InvestmentModule.handleAPIConfig(e); });
         }
 
+        // Settings button
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', function() {
+                // Populate currency dropdown with current value
+                document.getElementById('settings-currency').value = AppState.currency;
+                Modal.open('settings-modal');
+            });
+        }
+
+        const settingsForm = document.getElementById('settings-form');
+        if (settingsForm) {
+            settingsForm.addEventListener('submit', function(e) { App.handleSettings(e); });
+        }
+
         document.querySelectorAll('.close-modal').forEach(function(btn) {
             btn.addEventListener('click', function() { Modal.closeAll(); });
         });
@@ -709,7 +745,8 @@ const ExpenseModule = {
         let isValid = true;
 
         if (isNaN(amount) || amount <= 0) {
-            Utils.showError('exp-amount-error', 'Please enter a valid amount greater than ₹0');
+            var currSym = CONFIG.CURRENCIES[AppState.currency] ? CONFIG.CURRENCIES[AppState.currency].symbol : '₹';
+            Utils.showError('exp-amount-error', 'Please enter a valid amount greater than ' + currSym + '0');
             isValid = false;
         }
 
@@ -815,8 +852,9 @@ const ExpenseModule = {
                 Utils.formatCurrency(stats.totalMonthly) + '\n\n';
 
         // Section 2: Expense Transactions
+        const currSym = CONFIG.CURRENCIES[AppState.currency] ? CONFIG.CURRENCIES[AppState.currency].symbol : '₹';
         csv += '=== EXPENSE TRANSACTIONS ===\n';
-        csv += 'Date,Description,Category,Amount (₹)\n';
+        csv += 'Date,Description,Category,Amount (' + currSym + ')\n';
         AppState.expenses.forEach(function(e) {
             csv += '"' + e.date + '","' +
                     e.desc.replace(/"/g, '""') + '","' +
@@ -825,8 +863,9 @@ const ExpenseModule = {
         });
 
         // Section 3: Investment Portfolio
+        var currSym2 = CONFIG.CURRENCIES[AppState.currency] ? CONFIG.CURRENCIES[AppState.currency].symbol : '₹';
         csv += '\n=== INVESTMENT PORTFOLIO ===\n';
-        csv += 'Symbol,Name,Price (₹),Change (%),Status\n';
+        csv += 'Symbol,Name,Price (' + currSym2 + '),Change (%),Status\n';
         InvestmentModule.stocks.forEach(function(s) {
             csv += '"' + s.symbol + '","' +
                     s.name + '",' +
@@ -1208,7 +1247,10 @@ const ChartModule = {
                         y: {
                             beginAtZero: true,
                             grid: { color: gridColor },
-                            ticks: { color: textColor, callback: function(value) { return '₹' + value.toLocaleString('en-IN'); } }
+                            ticks: { color: textColor, callback: function(value) {
+                                var c = CONFIG.CURRENCIES[AppState.currency] || CONFIG.CURRENCIES.INR;
+                                return c.symbol + value.toLocaleString(c.locale);
+                            } }
                         },
                         x: { grid: { display: false }, ticks: { color: textColor } }
                     }
@@ -1328,6 +1370,9 @@ const Modal = {
         if (id === 'api-config-modal') {
             document.getElementById('api-provider').value = AppState.apiConfig.provider;
             document.getElementById('api-key').value = AppState.apiConfig.key;
+        }
+        if (id === 'settings-modal') {
+            document.getElementById('settings-currency').value = AppState.currency;
         }
         document.getElementById(id).classList.add('active');
     },
@@ -1591,13 +1636,14 @@ App.handleSetup = function(e) {
 
     let isValid = true;
 
+    var currSymSetup = CONFIG.CURRENCIES[AppState.currency] ? CONFIG.CURRENCIES[AppState.currency].symbol : '₹';
     if (isNaN(balance) || balance < 0) {
-        Utils.showError('set-balance-error', 'Please enter a valid balance (₹0 or more)');
+        Utils.showError('set-balance-error', 'Please enter a valid balance (' + currSymSetup + '0 or more)');
         isValid = false;
     }
 
     if (isNaN(budget) || budget <= 0) {
-        Utils.showError('set-budget-error', 'Please enter a valid budget (₹1 or more)');
+        Utils.showError('set-budget-error', 'Please enter a valid budget (' + currSymSetup + '1 or more)');
         isValid = false;
     }
 
@@ -1624,6 +1670,27 @@ App.handleSetup = function(e) {
         App.renderAll();
         Toast.show('Setup complete! Start tracking your expenses.', 'success');
     });
+}
+
+App.handleSettings = function(e) {
+    e.preventDefault();
+
+    const currency = document.getElementById('settings-currency').value;
+
+    // Save to localStorage immediately
+    AppState.currency = currency;
+    localStorage.setItem(CONFIG.STORAGE_KEYS.CURRENCY, currency);
+
+    Modal.closeAll();
+
+    // Persist to server (fire-and-forget)
+    API.updateSettings({ currency: currency }).catch(function() {
+        // Silent fail — currency is purely display, localStorage is enough
+    });
+
+    // Master refresh — re-render every amount with the new currency symbol
+    App.refreshData();
+    Toast.show('Currency changed to ' + (CONFIG.CURRENCIES[currency] ? CONFIG.CURRENCIES[currency].label : currency), 'success');
 }
 
 

@@ -128,9 +128,14 @@
                         <span class="user-role" id="profile-email">Premium User</span>
                     </div>
                 </div>
-                <button id="logout-btn" class="icon-btn-small logout" title="Logout">
-                    <i data-lucide="log-out"></i>
-                </button>
+                <div style="display:flex; gap:0.5rem;">
+                    <button id="settings-btn" class="icon-btn-small" title="Settings">
+                        <i data-lucide="settings"></i>
+                    </button>
+                    <button id="logout-btn" class="icon-btn-small logout" title="Logout">
+                        <i data-lucide="log-out"></i>
+                    </button>
+                </div>
             </div>
         </aside>
 
@@ -259,7 +264,7 @@
                                 <option value="Others">Others</option>
                             </select>
                         </div>
-                        <div class="filter-group">
+                         <div class="filter-group">
                             <label for="expense-search">Search</label>
                             <input type="text" id="expense-search" placeholder="Search description...">
                         </div>
@@ -514,6 +519,36 @@
         </div>
     </div>
     
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content small">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <form id="settings-form">
+                <div class="form-group">
+                    <label for="settings-currency">Display Currency</label>
+                    <select id="settings-currency">
+                        <option value="INR">Indian Rupee (₹)</option>
+                        <option value="USD">US Dollar ($)</option>
+                        <option value="EUR">Euro (€)</option>
+                        <option value="GBP">British Pound (£)</option>
+                        <option value="JPY">Japanese Yen (¥)</option>
+                        <option value="AUD">Australian Dollar (A$)</option>
+                        <option value="CAD">Canadian Dollar (C$)</option>
+                        <option value="SGD">Singapore Dollar (S$)</option>
+                        <option value="AED">UAE Dirham (د.إ)</option>
+                    </select>
+                    <span style="display:block; font-size:0.8rem; color:var(--text-muted); margin-top:0.5rem;">Only display formatting changes. No transaction data is modified.</span>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="toast-container" class="toast-container"></div>
     <script src="script.js"></script>
 </body>
