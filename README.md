@@ -3,7 +3,7 @@
 [![Vercel](https://img.shields.io/badge/deployed%20on-Vercel-000000?logo=vercel)](https://extracker-m9z7dyq8l-samanyu-thakurs-projects.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **Track expenses, monitor stocks, and get AI-driven insights** — India's most modern fintech platform with a premium glassmorphic dark design.
+> **Track expenses, monitor stocks, and get AI-driven insights** 
 
 ![FinTrack Noir Dashboard](ui-overhaul-dashboard.png)
 
